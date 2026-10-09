@@ -32,3 +32,18 @@ artifacts/
 
 # OS files
 .DS_Store
+
+# Imported reference source: local build output and workspace state
+.pytest_cache/
+*.egg-info/
+.build/
+_CodeSignature/
+study-system/tools/calendar-events/calendar-events
+.study-system/
+.study-workspace.json
+backups/
+evidence/
+*.sqlite-*
+*.sqlite3-journal
+*.sqlite3-wal
+*.sqlite3-shm

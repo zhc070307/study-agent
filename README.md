@@ -32,3 +32,20 @@
 - [桌面与 Web 基础](https://github.com/deepseek-ai/deepseek-harness/blob/master/apps/desktop/README.md)
 
 此前考察为文档与接口审阅，尚未在本项目安装、运行或验证该 harness。正式实现前应固定版本并复核对应接口。
+
+## 现有 Study System 参考源码
+
+`study-system/` 是现有自用程序的独立源码快照，供云端检查和后续设计参考。它包含 Python 程序、SQL migrations、测试、工具源码、生命周期钩子与三份通用 Skill；尚未接入 DeepSeek Harness。复制与测试不修改原自用系统。
+
+上传排除了虚拟环境、缓存、编译后的日历工具、签名文件、数据库、日志、运行目录、备份、课程材料、个人作答和学习证据。测试在临时目录创建独立账本；评估场景中的课程、时间、任务身份和来源名称已改为示例。Skill 保留现有流程与模型分工，供检查现状，不表示新项目已采纳其中每项约束。
+
+云端可先运行现有 Python 测试：
+
+```bash
+cd study-system/app/task-memory
+PYTHONPATH=src python3 -m unittest discover -s tests -t .
+```
+
+Python 包要求 Python 3.9 或以上，运行依赖使用标准库。Swift 日历工具依赖 macOS EventKit；其源码与构建脚本已保留，Linux 云端不能运行该工具。PDF 质量工具需要 `pdftotext`；编译与视觉检查仍需相应 LaTeX 和 PDF 工具。
+
+`.study-workspace.example.json` 提供不含个人内容的配置。使用时复制为 `.study-workspace.json`，创建独立的 `local-semester/`，再执行 `study-system/study --workspace local-semester init`。这会新建空账本，不包含任何历史学习数据。现有业务说明见 `study-system/README.md` 与 `study-system/skills/`；不上传真实学期目录。
