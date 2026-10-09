@@ -149,18 +149,14 @@ and keep learning consequences in course state rather than action memory.
   Codex work on the current checklist within its agreed scope. Do not leave it
   as a proposal awaiting another prompt. Keep genuine blockers and remaining
   stages visible; student reading/practice still requires student evidence.
-- For substantive taught content, preserve distinct evidence stages with
-  existing continuing tasks where adequate: Codex processes the materials and produces or
-  updates the notes; the student reads the notes and any targeted required
-  source; the student independently practices or completes a no-aid mastery
-  check. Do not impose dependencies merely from this order or require a new PDF and
-  three new tasks per class. Do not pre-create future lectures. If an older session has combined
-  stages, preserve its task identity but make every remaining stage explicit.
-  Follow an explicit course/user exception when a tutorial repeats already-read
-  content: judge whether new notes add value, reuse existing notes and practice
-  tasks when adequate, and cancel redundant reading stages with a reason.
-  Processing still needs a full material review and truthful receipt; no new
-  notes does not imply student practice or mastery is complete.
+- Arrange only the work supported by course agreements and the student's needs.
+  Material processing, reading and independent practice have different evidence,
+  but they do not impose an order on the student. The student may read first,
+  practice directly, alternate, reuse existing work or request another approach.
+  Do not automatically create a reading prerequisite, a new PDF or three tasks
+  per class. Preserve existing task identities and record actual remaining work.
+  The model must inspect materials and save truthful receipts; it must not claim
+  that reading, practice or mastery occurred without the corresponding evidence.
 - A real weakness, error, guess, unexplained result or retest need must never
   live only as a learning issue. Link it to an adequate open task or create a
   targeted task under the student's standing authorization for this rule.
@@ -177,7 +173,7 @@ and keep learning consequences in course state rather than action memory.
   has substantial learning value but a short deferral remains recoverable. If
   Time is enrichment or lower marginal value after the higher-consequence work.
 - Weekly and daily selection is not deadline sorting. Start from the complete
-  open inventory and the dependency-linked learning chains, then apply this
+  open inventory and genuine task prerequisites, then apply this
   order:
   1. Protect confirmed, irreversible official time constraints early enough to
      meet them: submissions, graded quizzes, exams, and prerequisites whose
@@ -185,8 +181,7 @@ and keep learning consequences in course state rather than action memory.
      review date, spacing window, or ordinary `due_at` is not automatically a
      hard deadline.
   2. For everything else, respect Must before Should before If Time. Within the
-     same level, prefer the larger learning consequence: closing a broken
-     materials -> reading -> independent-practice chain; addressing evidenced
+     same level, prefer the larger learning consequence: addressing a material, reading or practice gap according to the user’s needs; addressing evidenced
      weakness at a useful retest interval; unlocking downstream work or
      preventing gaps from compounding before the next class; and protecting a
      high-impact or demonstrably high-risk course. Recency, age, and ordinary
@@ -306,7 +301,7 @@ the event with the missing input; do not invent a teaching endpoint.
 
 For an ordinary new or changed file:
 
-1. inspect it and its session neighbours;
+1. inspect actual contents, then use `material classify EVENT --kind TYPE --reason REASON` to record the type; use `--session SESSION` only after confirming the relationship. New files remain `other`; filenames, extensions and dates do not classify or bundle them;
 2. update the `COURSE.md` material map;
 3. update current state only for facts the evidence supports;
 4. inspect explicit deadlines, submissions and assessment requirements;

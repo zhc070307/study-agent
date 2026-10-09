@@ -1,0 +1,55 @@
+{
+  "feedback": {
+    "title": "根据作答安排下一次练习",
+    "steps": [
+      {
+        "id": "feedback",
+        "kind": "feedback",
+        "instructions": "读取学生的原始作答，再批改并登记具体错误或不确定处。解释或发卷不代表掌握。"
+      },
+      {
+        "id": "plan",
+        "kind": "plan",
+        "instructions": "读取课程方法、实际授课范围和错点证据，写选题草案。核对来源、去重和整卷负担。",
+        "after": [
+          "feedback"
+        ]
+      },
+      {
+        "id": "review",
+        "kind": "review",
+        "instructions": "根据已保存草案制作练习，逐题核对原题并逐页检查成品，保存真实核验结果后交付。",
+        "after": [
+          "plan"
+        ]
+      }
+    ]
+  },
+  "material": {
+    "title": "处理新材料",
+    "steps": [
+      {
+        "id": "inspect",
+        "kind": "inspect",
+        "instructions": "读取材料内容，明确登记类型和所属课次，核对实际范围与正式要求，不根据文件名猜测。"
+      },
+      {
+        "id": "handoff",
+        "kind": "tasks",
+        "after": [
+          "inspect"
+        ],
+        "instructions": "依据课程约定、材料和用户要求安排实际需要的任务，已有任务能接续时复用。可以只读笔记、直接练习、交替进行或不新增任务，不默认两者有先后，不自动创建用户任务依赖；记录安排依据。"
+      },
+      {
+        "id": "receipt",
+        "kind": "receipt",
+        "instructions": "实际更新材料地图、复核课程状态和正式要求后保存处理回执。转写材料需要已完成的笔记，或明确记录无需新笔记的理由；待做任务仍保持未完成。",
+        "after": [
+          "inspect",
+          "handoff"
+        ]
+      }
+    ]
+  }
+}

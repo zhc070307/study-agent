@@ -272,6 +272,9 @@ class LearningTests(ServiceTestCase):
         self.assertEqual(self.learning.scan_materials(self.root)['events'], 1)
         self.assertEqual(self.learning.scan_materials(self.root)['events'], 0)
         event = self.learning.pending_events()[0]
+        self.assertEqual(event['artifact_kind'], 'other')
+        self.learning.classify_material(event['id'], 'transcript', reason='Read actual lecture content')
+        event = self.learning.pending_events()[0]
         self.assertEqual(event['event_type'], 'transcript_ready')
         args = dict(summary='Read transcript', task_effect='No new obligation',
                     material_map_updated=True, course_state_reviewed=True,
@@ -293,6 +296,7 @@ class LearningTests(ServiceTestCase):
         (folder / 'transcript.txt').write_text('Revision of existing logic methods')
         self.learning.scan_materials(self.root)
         event = self.learning.pending_events()[0]
+        self.learning.classify_material(event['id'], 'transcript', reason='Read tutorial')
         receipt = self.learning.close_event(
             event['id'], summary='Fully reviewed tutorial', task_effect='Reuse existing practice',
             lecture_notes_path=None, notes_not_required_reason='Student authorized judgment; existing notes cover the topic',
@@ -311,9 +315,11 @@ class LearningTests(ServiceTestCase):
         (session / 'audio.m4a').write_bytes(b'audio')
         self.learning.scan_materials(self.root)
         recording = self.learning.pending_events()[0]
+        self.learning.classify_material(recording['id'], 'recording', reason='Listened to lecture', session='lecture-1')
         (session / 'transcript.txt').write_text('Lecture')
         self.learning.scan_materials(self.root)
-        transcript = next(e for e in self.learning.pending_events() if e['event_type'] == 'transcript_ready')
+        transcript = next(e for e in self.learning.pending_events() if e['id'] != recording['id'])
+        self.learning.classify_material(transcript['id'], 'transcript', reason='Read lecture', session='lecture-1')
         notes = session / 'notes.md'
         notes.write_text('Actual notes')
         args = dict(summary='Reviewed bundle', task_effect='No new official requirement',

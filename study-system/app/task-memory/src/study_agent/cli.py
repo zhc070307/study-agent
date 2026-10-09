@@ -250,6 +250,11 @@ def build_parser() -> argparse.ArgumentParser:
     material_pending.add_argument("--course", default=None)
     material_inspect = material_sub.add_parser('inspect', help='inspect event and session materials')
     material_inspect.add_argument('event_id')
+    classify = material_sub.add_parser('classify', help='record material type after inspecting content')
+    classify.add_argument('event_id')
+    classify.add_argument('--kind', required=True)
+    classify.add_argument('--session', default=None)
+    classify.add_argument('--reason', required=True)
     for name in ('claim', 'release'):
         item = material_sub.add_parser(name, help=name + ' semantic handling of an event')
         item.add_argument('event_id')
@@ -624,10 +629,13 @@ def _run_today(args: argparse.Namespace) -> int:
 
 
 def _run_material(args: argparse.Namespace) -> int:
-    write = args.material_command in ("baseline", "scan", "close", 'claim', 'release')
+    write = args.material_command in ("baseline", "scan", "close", 'claim', 'release', 'classify')
     conn = _open_db(args, write=write)
     try:
         service = LearningService(conn, clock=Clock())
+        if args.material_command == 'classify':
+            result = service.classify_material(args.event_id, args.kind, reason=args.reason, session=args.session)
+            return _emit(args, result, 'material type recorded')
         if args.material_command in ('claim', 'release'):
             with db.atomic(conn):
                 row = conn.execute('SELECT * FROM material_events WHERE id=?', (args.event_id,)).fetchone()

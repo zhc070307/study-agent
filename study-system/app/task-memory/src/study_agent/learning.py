@@ -31,8 +31,6 @@ ACTOR_SECTION_LABELS = {
     "agent": "Codex 要做的",
     "external": "外部事项",
 }
-MEDIA_EXTENSIONS = {".m4a", ".mp3", ".wav", ".aac", ".mp4", ".mov"}
-TRANSCRIPT_WORDS = ("transcript", "原稿", "转写", "文字稿")
 IGNORED_PARTS = {".git", ".study-system", ".DS_Store", "__pycache__", ".pytest_cache"}
 BUILD_SUFFIXES = {'.aux', '.log', '.out', '.xdv', '.fls', '.fdb_latexmk', '.pyc', '.gz'}
 
@@ -274,30 +272,6 @@ class LearningService:
                 result[course["id"]] = (course, folder)
         return result
 
-    def _artifact_kind(self, path: Path) -> str:
-        lower = path.name.lower()
-        suffix = path.suffix.lower()
-        if any(word in lower for word in TRANSCRIPT_WORDS):
-            return "transcript"
-        if suffix in MEDIA_EXTENSIONS:
-            return "recording"
-        if "slide" in lower or suffix in {".ppt", ".pptx"}:
-            return "slides"
-        if "assign" in lower or "lab" in lower or "homework" in lower:
-            return "assignment"
-        if "result" in lower or "grade" in lower or "score" in lower:
-            return "result"
-        if suffix in {".md", ".txt"}:
-            return "note"
-        return "other"
-
-    def _session_key(self, relative: Path) -> str:
-        text = relative.as_posix()
-        found = re.search(r"(20\d{2})[-_.]?(\d{2})[-_.]?(\d{2})", text)
-        if found:
-            return "%s-%s-%s" % found.groups()
-        return relative.parent.as_posix() if relative.parent.as_posix() != "." else relative.stem
-
     def _files(self, folder: Path) -> Iterable[Path]:
         for path in folder.rglob("*"):
             if not path.is_file() or any(part in IGNORED_PARTS for part in path.parts):
@@ -319,11 +293,12 @@ class LearningService:
                     version_key = hashlib.sha256(
                         ("%s:%d:%d" % (relative.as_posix(), stat.st_size, stat.st_mtime_ns)).encode("utf-8")
                     ).hexdigest()
-                    kind = self._artifact_kind(path)
-                    session = self._session_key(relative)
                     old = self.conn.execute(
-                        "SELECT version_key FROM material_sources WHERE source_key = ?", (source_key,)
+                        "SELECT * FROM material_sources WHERE source_key = ?", (source_key,)
                     ).fetchone()
+                    # File scans observe changes; classification is explicit.
+                    kind = old["artifact_kind"] if old else "other"
+                    session = old["session_key"] if old else relative.as_posix()
                     counts["seen"] += 1
                     if old is None:
                         counts["new"] += 1
@@ -364,6 +339,31 @@ class LearningService:
                     counts["events"] += 1
         counts["baseline"] = bool(baseline)
         return counts
+
+    def classify_material(self, event_id: str, kind: str, *, reason: str,
+                          session: Optional[str] = None) -> Dict[str, Any]:
+        if kind not in {'slides', 'recording', 'transcript', 'note', 'assignment', 'result', 'other'}:
+            raise ValidationError('Unsupported material type')
+        if not reason.strip() or (session is not None and not session.strip()):
+            raise ValidationError('Classification reason and an explicit session must be nonempty')
+        with self._write():
+            event = self.conn.execute('SELECT * FROM material_events WHERE id=?', (event_id,)).fetchone()
+            if event is None or event['status'] not in ('pending', 'processing'):
+                raise ValidationError('Classify an open material event')
+            source = self.conn.execute('SELECT * FROM material_sources WHERE source_key=?',
+                                       (event['source_key'],)).fetchone()
+            if source is None or source['version_key'] != event['version_key']:
+                raise ConflictError('Classify the current file version')
+            session = session.strip() if session is not None else source['session_key']
+            payload = json.loads(event['payload_json'])
+            payload['classification'] = {'kind': kind, 'reason': reason.strip(), 'session': session}
+            event_type = ('transcript_ready' if kind == 'transcript' else
+                          'file_changed' if event['event_type'] == 'transcript_ready' else event['event_type'])
+            self.conn.execute('UPDATE material_sources SET artifact_kind=?,session_key=? WHERE source_key=?',
+                              (kind, session, event['source_key']))
+            self.conn.execute('UPDATE material_events SET artifact_kind=?,session_key=?,event_type=?,payload_json=? WHERE id=?',
+                              (kind, session, event_type, json.dumps(payload, ensure_ascii=False), event_id))
+        return {'id': event_id, 'kind': kind, 'session': session, 'reason': reason.strip()}
 
     def pending_events(self, course: Optional[str] = None) -> List[Dict[str, Any]]:
         params: List[Any] = []
@@ -726,7 +726,7 @@ def render_week_v4(conn: sqlite3.Connection, week: str) -> str:
         "",
         "> 本页是本周范围。全部开放记录 %d 项｜本周范围 %d 项（当前可开始 %d 项）｜本周外保存 %d 项。"
         % (open_count, len(items), counts["ready_week"], counts["outside_week"]),
-        "> 全部开放记录还包含未来事项与等待项，见 [BACKLOG.md](BACKLOG.md)；它们不自动算作下周工作量。普通任务不伪造执行日期。",
+        "> 全部开放记录还包含未来事项与等待项，见 [BACKLOG.md](BACKLOG.md)",
         "",
     ]
     by_course: Dict[str, List[Dict[str, Any]]] = {}
