@@ -30,6 +30,10 @@ artifacts/
 *.jsonl
 *.log
 
+# Synthetic PDF used by the GUI prototype; keep personal PDFs excluded.
+!ui/samples/materials/
+!ui/samples/materials/derivatives.pdf
+
 # OS files
 .DS_Store
 
