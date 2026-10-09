@@ -1,0 +1,34 @@
+# Local credentials and configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials*.json
+
+# Dependencies and builds
+node_modules/
+dist/
+build/
+.venv/
+__pycache__/
+*.py[cod]
+
+# Personal study data and runtime
+.data/
+.runtime/
+data/
+runtime/
+materials/
+artifacts/
+*.sqlite
+*.sqlite3
+*.sqlite3-*
+*.db
+*.db-*
+*.pdf
+*.jsonl
+*.log
+
+# OS files
+.DS_Store
