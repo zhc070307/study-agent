@@ -78,7 +78,50 @@
 - [工具接口与执行约束](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/cookbook/adding-a-tool.md)
 - [桌面与 Web 基础](https://github.com/deepseek-ai/deepseek-harness/blob/master/apps/desktop/README.md)
 
-此前考察为文档与接口审阅，尚未在本项目安装、运行或验证该 harness。正式实现前应固定版本并复核对应接口。
+本次已完成下述固定版本的源码接口与运行验证；正式接入尚待用户确认。
+
+## DeepSeek Harness 验证结果
+
+考察版本固定为 [`5badb15009ae1756c3afe0ae0cef1faafc290ccc`](https://github.com/deepseek-ai/deepseek-harness/tree/5badb15009ae1756c3afe0ae0cef1faafc290ccc)，仓库版本字段为 `0.2.1-alpha.1`。环境为 Linux x86_64/glibc、Node 24.19.0、pnpm 11.19.0（上游声明 pnpm 11.7.0）。API 仍处于 pre-stable 阶段，后续升级需显式复核接口。
+
+运行了 6 个定向测试文件，共 218 项，全部通过：上游工具执行与并发策略、AgentLoop 持久会话恢复、动态插件更新失败回滚、Plugin Manager 的 Loader 重载，以及本项目的临时 Python 账本桥接。桥接验证了实际模型循环中的工具调用能保存学习任务，重建 Context 后能恢复历史；新插件版本将下一项任务从笔记变为练习，原账本与会话历史保留。直接通过 Python 领域操作完成没有证据的任务仍被拒绝；卸载桥接插件后工具消失。
+
+模型循环测试使用脚本化 MockAdapter，插件修改由验证程序提供。此外，通过支持的 `dsh --profile sdk-minimal` 启动实际 profile，SDK initialize 返回正常的 `deepseek-harness-sdk-runtime` 身份，shutdown 返回正常并以状态码 0 退出。此握手证明该 profile 能启动并解析模型配置，不证明真实模型能正确理解用户要求、编写修改或判断教学内容。当前没有配置 DeepSeek API 凭据，真实推理请求及模型修改流程的端到端验证尚未进行。
+
+完整 monorepo 安装在当前网络环境中无法获取文档预览所用的 SheetJS tarball。定向验证改为安装所需插件依赖闭包，未替换该依赖或改变上游 lockfile。云端 Node 缺少附带开发头文件；使用同版本官方 Node 头文件及上游编译参数构建 flock 模块后，会话恢复测试通过。复现脚本安装时跳过生命周期脚本，只显式编译验证所需模块；这不是完整产品构建验证。
+
+复现定向验证（Linux x86_64/glibc，需 Node、pnpm、Python、Git、curl、tar 和 C 编译器）：
+
+```bash
+bash verification/deepseek-harness/run.sh
+# 或复用已经检出的固定版本：
+bash verification/deepseek-harness/run.sh /path/to/deepseek-harness
+```
+
+SDK profile 握手另行复现：在固定版本 checkout 中运行 `pnpm --filter '*' --filter '!@deepseek-ai/dsh-client-ui-sidebar-documentpreview' install --frozen-lockfile --ignore-scripts`，然后从本项目运行 `python3 verification/deepseek-harness/sdk-smoke.py /path/to/deepseek-harness`。它使用临时 Harness home，只初始化和关闭 SDK，不发送推理请求；文档预览插件未安装，不代表完整 Web 应用验证。
+
+脚本默认在临时目录获取固定版本，测试使用独立临时账本与 Session 目录；传入已有 checkout 时会安装依赖、构建 native 模块，并临时加入随后移除的验证文件。验证代码不是新产品的流程实现。
+
+接口核对的关键结论：
+
+- Cordis plugin、`agent/pre-step`、`agent/request`、工具执行管线及 `agent/turn-stopping` 可用于阶段上下文、前置检查与收尾。业务前置条件还需在执行领域操作的入口落实，不能只靠 prompt 或工具隐藏。
+- Session JSONL 可以恢复模型历史和处理中断的调用；它不自动恢复学习流程进度，也不保证与 Python SQLite 的业务写入原子提交，需要自己的操作身份、幂等与对账。
+- 上游 `workflow` 主要是模型编写的多 agent 编排脚本，不是现成的学习业务状态机；不能直接替代学习流程的持久状态与证据检查。
+- 动态 Cordis 定义只在当前进程、当前 Session 内存在，重启会丢失；当前模型工具 `cordis_inspect_*` 只读，不能创建动态定义。持久安装与配置更新使用 Creator 模式的 Plugin Manager。
+- Plugin Manager 改动作用于整个 profile；开启 HMR 时可立即加载，未开启时需重启。headless/SDK 默认关闭 HMR。Host 插件运行在进程中，动态 runner 的 VM 也不提供安全隔离，不能宣称任意生成代码可安全热替换。
+
+## 待确认的接入与修改方案
+
+建议采用固定版本 DeepSeek Harness，以本项目插件扩展其能力，优先使用现有扩展点，避免第一步改写上游 agent-loop。下列路径和实现方式均为方案，尚未执行：
+
+1. **底座与领域桥接。** 固定上游 commit，以 Git submodule 保留在 `vendor/deepseek-harness/`。新增 `packages/study-domain/` 插件，通过带请求 ID 的 JSON 协议调用 Python 领域 worker，复用 `study-system` 的账本、任务、材料、assessment、备份和交付检查。Python 事务、操作幂等和业务证据属于领域层，Session 记录操作身份、版本与结果供对账。
+2. **将流程融入执行。** 新增 `packages/study-flow/`，管理阶段、分支、上下文、允许的操作、前置条件、阶段结果与恢复。`flows/` 保存可版本化的流程定义；有新行为时使用 TypeScript 插件或 Python 处理器代码，不把全部变化限制为配置。定义只描述编排，教学正文和表达标准继续由对应阶段装配。流程状态和操作结果持久化，所有提供给模型的业务写入口都落实对应前置检查。
+3. **给予模型修改能力。** 新增 `packages/study-flow-edit/`，提供读取实现、生成实际定义或代码差异、验证、激活和回退的操作。模型根据用户要求调整课程流程或通用实现；差异保留用户要求与适用范围。常规定义修改以课程/流程版本为单位，避免通过全局 Plugin Manager 切换影响所有会话；真正需要新 Host 代码时才构建并加载插件版本，继续遵循上游权限机制。
+4. **版本生效与验证。** 候选修改在临时数据与独立运行环境中检查语法、引用、业务前置条件和具体行为；失败则保留原版本。新运行采用已激活版本，在途运行默认保留所用版本；用户要求影响在途流程时生成明确的状态转换并保留原证据。第一轮以新 agent/重启加载代码版本，不依赖任意代码的即时 HMR；流程定义可在阶段边界选择新版本。
+5. **先做可运行的完整闭环。** 先接入“作答反馈 → 错点登记 → 出卷计划 → 成品核验”及必要的课程、任务、材料接口，然后按已确认业务范围扩展其他流程。这是建议的实现顺序，不缩减第一版范围。模型修改案例使用“指定课程的新材料直接进入练习，不生成新笔记”，检查后续运行确实采用新分支、已有任务和证据不被误判完成。
+6. **正式验收。** 用支持的 `dsh` profile 启动实际插件组合，验证真实领域操作、取消恢复、幂等对账、定义修改、处理器代码修改、失败回退和在途版本处理。凭据可用后补真实模型调用，核对它是否能根据用户要求生成正确差异；MockAdapter 验证不能替代此项。此次不实现 GUI、不部署本机。
+
+需要用户确认的是上述整体接入方案，尤其是“上游插件扩展 + Python 领域代码复用 + 可修改的流程定义与处理器”。确认后再创建正式插件、流程运行状态和修改工具；目前只保存验证代码与设计方案。
 
 ## 现有 Study System 参考源码
 
