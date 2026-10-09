@@ -340,6 +340,14 @@ Do not close an event by saying only “seen”. If no task is needed, state why
 the task-effect receipt. If no transcript will exist, use the best available
 evidence and state the limitation in `COURSE.md`.
 
+In the integrated Study Agent, use the common `study_read`, `study_work` and
+`study_change` tools for plans, retests, course reviews and standing memory.
+Use the same project entry for any remaining service command; do not create a
+second ledger or model loop. Retest results require original answer evidence;
+CLI `assessment retest` therefore needs `--evidence-ref`. A later failure or
+uncertain result reopens the issue and preserves previous attempts. A passed
+issue does not automatically complete a student task.
+
 ## Feedback
 
 ### Course-agreed consolidation worksheets

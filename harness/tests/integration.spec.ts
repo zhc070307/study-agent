@@ -137,3 +137,73 @@ it('model tool calls validate, activate and execute new handler code', async () 
     await rm(root, { recursive: true, force: true })
   }
 }, 20000)
+
+it('same model loop plans from reviewed facts, records evidenced retests and restores action memory', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'study-all-services-'))
+  const contexts: Context[] = []
+  try {
+    const task = execFileSync('python3', ['-c', `import sys
+sys.path.insert(0, sys.argv[2] + '/harness')
+from worker import Store
+s=Store(sys.argv[1]); s.tasks.add_course('DEMO','Example'); s.learning.setup_course_context(s.root,'DEMO')
+print(s.tasks.create_task('Flexible practice',course='DEMO',status='open').task_key)
+s.conn.close()`, root, project], { encoding: 'utf8' }).trim()
+    const current = (flow: string) => sql(root, `dict(c.execute("SELECT r.* FROM flow_runs r JOIN flow_versions v ON v.id=r.version WHERE v.flow='${flow}' ORDER BY r.rowid DESC LIMIT 1").fetchone())`)
+    const first = await mount(root, new MockAdapter([
+      work('all-feedback-start', 'start', { flow: 'feedback', course: 'DEMO' }),
+      () => work('all-feedback', 'advance', { run: current('feedback').id, step: 'feedback', input: {
+        answers: 'Actual original answer', summary: 'Misunderstood implication', issues: [{ concept: 'Implication', issue_type: 'wrong' }],
+      } }),
+      work('all-retest-start', 'start', { flow: 'retest', course: 'DEMO' }),
+      () => work('all-retest', 'advance', { run: current('retest').id, step: 'result', input: {
+        answers: 'Actual independent retest answer', summary: 'Explained implication correctly',
+        results: [{ issue: read(root, { course: 'DEMO' }).issues[0].id, result: 'passed' }],
+      } }),
+      work('all-daily-start', 'start', { flow: 'daily' }),
+      () => work('all-context', 'advance', { run: current('daily').id, step: 'context', input: {} }),
+      () => {
+        const state = read(root, { course: 'DEMO' })
+        return work('all-reconcile', 'advance', { run: current('daily').id, step: 'reconcile', input: { reviews: [{
+          course: 'DEMO', ledger_hash: state.course_state.ledger_hash, course_hash: state.course_state.course_hash,
+          summary: 'Reviewed actual attempts and open task; teaching boundary remains unknown',
+        }] } })
+      },
+      () => work('all-selection', 'advance', { run: current('daily').id, step: 'selection', input: {
+        pool: [{ task, priority: 'should', reason: 'User wants flexible practice' }], selected: [task], reason: 'Choose user-requested practice without a reading prerequisite',
+      } }),
+      work('all-memory-start', 'start', { flow: 'memory' }),
+      () => work('all-memory', 'advance', { run: current('memory').id, step: 'memory', input: {
+        expected: read(root, {}).memory.content_hash, content: '用户自主安排阅读与练习顺序，保留真实作答。', summary: 'Save standing user agreement',
+      } }),
+      options => {
+        expect(JSON.stringify(options)).toContain('用户自主安排阅读与练习顺序')
+        return textResponse('计划和复测结果已保存。')
+      },
+    ]))
+    contexts.push(first.ctx)
+    const handle = await first.ctx.agents.create({ sessionId: SessionId('all-services'), agentOptions: { provider: 'mock', model: 'mock' } })
+    await turn(first.ctx, handle.agent)
+    const state = read(root, { course: 'DEMO', context: true })
+    expect(state.issues[0].status).toBe('passed')
+    expect(state.assessments).toHaveLength(2)
+    expect(state.tasks[0].status).toBe('open')
+    expect(state.context.today.map((item: { task_key: string }) => item.task_key)).toEqual([task])
+    expect(current('daily').course).toBe(null)
+    await handle.dispose()
+    await first.ctx.fiber.dispose()
+    const second = await mount(root, new MockAdapter([
+      options => {
+        expect(JSON.stringify(options)).toContain('用户自主安排阅读与练习顺序')
+        expect(JSON.stringify(options)).toContain('Actual original answer')
+        return textResponse('按原约定接续未完成的选题工作。')
+      },
+    ]))
+    contexts.push(second.ctx)
+    const resumed = await second.ctx.agents.resume({ resumeSessionId: SessionId('all-services'), agentOptions: { provider: 'mock', model: 'mock' } })
+    await turn(second.ctx, resumed.agent)
+    expect(read(root, { session: 'all-services' }).pending.some((item: { available: { id: string }[] }) => item.available.some(step => step.id === 'plan'))).toBe(true)
+  } finally {
+    for (const ctx of contexts.reverse()) await ctx.fiber.dispose()
+    await rm(root, { recursive: true, force: true })
+  }
+}, 25000)

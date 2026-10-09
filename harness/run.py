@@ -26,7 +26,7 @@ def patch(data):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='学习助手')
+    parser = argparse.ArgumentParser(prog='study-agent', description='学习助手的统一运行入口')
     parser.add_argument('--data', type=Path, default=PROJECT / '.data')
     parser.add_argument('--dump-config', action='store_true')
     args = parser.parse_args()

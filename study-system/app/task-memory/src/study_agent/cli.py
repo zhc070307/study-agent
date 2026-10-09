@@ -321,6 +321,7 @@ def build_parser() -> argparse.ArgumentParser:
     assessment_retest.add_argument("--result", required=True, choices=list(ISSUE_RESULTS))
     assessment_retest.add_argument("--task", default=None)
     assessment_retest.add_argument("--note", default=None)
+    assessment_retest.add_argument("--evidence-ref", required=True)
 
     restore = sub.add_parser("restore", help="restore the database from a backup")
     restore.add_argument("--from", dest="source", required=True)
@@ -990,7 +991,7 @@ def _run_assessment(args: argparse.Namespace) -> int:
             with service._write():
                 reconciler.record_issue_result(
                     {"op": "record_issue_result", "issue_id": args.issue_id,
-                     "result": args.result, "task": args.task, "note": args.note}
+                     "result": args.result, "task": args.task, "note": args.note, "evidence_ref": args.evidence_ref}
                 )
             return _emit(args, {"issue_id": args.issue_id, "result": args.result}, "retest recorded")
         clauses, params = [], []

@@ -10,7 +10,7 @@ import tempfile
 project = Path(__file__).resolve().parents[2]
 with tempfile.TemporaryDirectory(prefix='study-profile-') as root:
     with tempfile.TemporaryFile(mode='w+') as diagnostics:
-        process = subprocess.Popen(['python3', str(project / 'harness/run.py'), '--data', root],
+        process = subprocess.Popen(['python3', str(project / 'study-agent'), '--data', root],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=diagnostics, text=True, start_new_session=True)
         try:
             process.stdin.write(json.dumps({'jsonrpc': '2.0', 'id': 1, 'method': 'initialize',

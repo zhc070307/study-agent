@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 import re
 import subprocess
+import sqlite3
 import sys
 import tempfile
 import uuid
@@ -15,7 +16,7 @@ PROJECT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT / 'study-system/app/task-memory/src'))
 from study_agent import db, delivery
 from study_agent.assessment import AssessmentService
-from study_agent.learning import LearningService
+from study_agent.learning import LearningService, write_learning_view, sync_working_v4
 from study_agent.service import TaskService
 from study_agent.runtime_cleanup import finish_work
 
@@ -43,6 +44,8 @@ def checked_path(root, value):
 
 def validate(definition):
     text(definition.get('title'), '流程名称')
+    if definition.get('scope', 'course') not in ('course', 'workspace'):
+        raise ValueError('流程范围必须是课程或全局')
     steps = definition.get('steps')
     if not isinstance(steps, list) or not steps:
         raise ValueError('流程至少需要一个步骤')
@@ -57,6 +60,11 @@ def validate(definition):
         text(step.get('instructions'), '步骤说明')
         if step.get('kind') not in HANDLERS:
             raise ValueError('未知的执行操作；新行为可用 custom 操作和 handler 代码实现')
+        course_operations = {'feedback', 'plan', 'review', 'task', 'tasks', 'inspect', 'receipt', 'retest'}
+        if step['kind'] in course_operations and definition.get('scope', 'course') != 'course':
+            raise ValueError('此操作需要明确的课程范围')
+        if step['kind'] in {'daily', 'memory'} and definition.get('scope', 'course') != 'workspace':
+            raise ValueError('计划和长期约定使用全局范围')
         if step['kind'] == 'task':
             text(step.get('task'), '任务名称')
         if step['kind'] == 'custom' and not step.get('handler'):
@@ -124,20 +132,74 @@ class Store:
               flow TEXT NOT NULL, scope TEXT NOT NULL, version TEXT NOT NULL REFERENCES flow_versions(id),
               PRIMARY KEY(flow,scope));
             CREATE TABLE IF NOT EXISTS flow_runs (
-              id TEXT PRIMARY KEY, course TEXT NOT NULL REFERENCES courses(id),
+              id TEXT PRIMARY KEY, course TEXT REFERENCES courses(id),
               session TEXT NOT NULL,
               version TEXT NOT NULL REFERENCES flow_versions(id), history TEXT NOT NULL DEFAULT '[]',
               status TEXT NOT NULL DEFAULT 'open');
             CREATE TABLE IF NOT EXISTS flow_operations (
               id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, result TEXT NOT NULL);
         ''')
-        with db.atomic(self.conn):
+        # Older app runs were course-only. Keep their identities and history.
+        if next(row for row in self.conn.execute('PRAGMA table_info(flow_runs)') if row['name'] == 'course')['notnull']:
+            with db.atomic(self.conn, bump_revision=False):
+                self.conn.execute('CREATE TABLE flow_runs_new (id TEXT PRIMARY KEY, course TEXT REFERENCES courses(id), '
+                    "session TEXT NOT NULL, version TEXT NOT NULL REFERENCES flow_versions(id), history TEXT NOT NULL DEFAULT '[]', status TEXT NOT NULL DEFAULT 'open')")
+                self.conn.execute('INSERT INTO flow_runs_new SELECT * FROM flow_runs')
+                self.conn.execute('DROP TABLE flow_runs')
+                self.conn.execute('ALTER TABLE flow_runs_new RENAME TO flow_runs')
+        self.recovery_warnings = self.recover_files()
+        with db.atomic(self.conn, bump_revision=False):
             for flow, definition in json.loads((PROJECT / 'harness/flows.json').read_text()).items():
                 validate(definition)
                 version = digest({'flow': flow, 'scope': '*', 'definition': definition})
                 self.conn.execute('INSERT OR IGNORE INTO flow_versions VALUES (?,?,?,?,?,?)',
                                   (version, flow, '*', encoded(definition), None, '初始流程'))
                 self.conn.execute('INSERT OR IGNORE INTO flow_active VALUES (?,?,?)', (flow, '*', version))
+
+    def save_evidence(self, operation, value):
+        path = self.root / '.study-system/evidence' / (digest(operation) + '.json')
+        db.write_text_atomic(path, encoded(value))
+        return path
+
+    def stage_text(self, path, content, operation):
+        """Journal file replacements before writing; SQLite owns the commit."""
+        path = checked_path(self.root, str(path))
+        if any(item.get('path') == str(path) for item in self.recovery_warnings):
+            raise ValueError('此文档存在未解决的中断恢复记录')
+        journal = self.root / '.study-system/runtime/changes' / (digest(operation) + '.json')
+        record = json.loads(journal.read_text()) if journal.exists() else {'operation': operation, 'files': []}
+        if any(item['path'] == str(path) for item in record['files']):
+            raise ValueError('一次操作不能重复修改同一文档')
+        record['files'].append({'path': str(path), 'before': path.read_text() if path.exists() else None,
+                               'after': hashlib.sha256(content.encode()).hexdigest()})
+        db.write_text_atomic(journal, encoded(record))
+
+    def recover_files(self):
+        warnings = []
+        # Serializes recovery with every cooperating worker. A committed ledger
+        # keeps its new files; an interrupted transaction restores old contents.
+        with db.atomic(self.conn, bump_revision=False):
+            for journal in (self.root / '.study-system/runtime/changes').glob('*.json'):
+                record = json.loads(journal.read_text())
+                committed = self.conn.execute('SELECT 1 FROM flow_operations WHERE id=?', (record['operation'],)).fetchone()
+                unresolved = False
+                if not committed:
+                    for item in record['files']:
+                        path = checked_path(self.root, item['path'])
+                        current = path.read_text() if path.exists() else None
+                        if current == item['before']:
+                            continue
+                        if current is not None and hashlib.sha256(current.encode()).hexdigest() == item['after']:
+                            if item['before'] is None:
+                                path.unlink()
+                            else:
+                                db.write_text_atomic(path, item['before'])
+                        else:
+                            unresolved = True
+                            warnings.append({'path': str(path), 'error': '恢复期间文档已有另外修改，保留恢复记录，请核对后处理。'})
+                if not unresolved:
+                    journal.unlink()
+        return warnings
 
     def version(self, identifier):
         row = self.conn.execute('SELECT * FROM flow_versions WHERE id=?', (identifier,)).fetchone()
@@ -173,9 +235,14 @@ class Store:
         if args.get('run'):
             return self.status(self.run(args['run']))
         courses = [dict(row) for row in self.conn.execute('SELECT id,code,name FROM courses ORDER BY code')]
-        result = {'courses': courses, 'guide': {
-            'study_command': ['python3', str(PROJECT / 'study-system/study'), '--workspace', str(self.root)],
+        memory = self.learning.memory_status(self.root)
+        memory['content'] = Path(memory['path']).read_text() if Path(memory['path']).exists() else ''
+        result = {'courses': courses, 'memory': memory, 'recovery_warnings': self.recovery_warnings,
+            'flows': {flow: self.active(flow, '*') for flow in json.loads((PROJECT / 'harness/flows.json').read_text())}, 'guide': {
+            'study_command': ['python3', str(PROJECT / 'study-agent'), 'service', '--data', str(self.root)],
             'standards': delivery.routes(),
+            'implementation': str(PROJECT / 'harness/worker.py'),
+            'operations': str(PROJECT / 'harness/services.py'),
             'note': '任务、周池、今日计划、复测、记忆、备份和课程核对使用现有 study 命令与同一账本。学习判断依据课程约定与相应标准。'
         }}
         if args.get('session'):
@@ -196,23 +263,33 @@ class Store:
             folder = self.learning.course_roots(self.root)[course['id']][1]
             if (folder / 'COURSE.md').exists():
                 result['course_context'] = (folder / 'COURSE.md').read_text()
+                result['course_state'] = self.learning.course_state_status(course['id'], folder / 'COURSE.md')
+            result['assessments'] = [dict(row) for row in self.conn.execute('SELECT * FROM assessment_attempts WHERE course_id=? ORDER BY created_at', (course['id'],))]
+            result['retest_results'] = [dict(row) for row in self.conn.execute('SELECT r.* FROM assessment_issue_results r JOIN learning_issues i ON i.id=r.issue_id WHERE i.course_id=? ORDER BY recorded_at', (course['id'],))]
             self.learning.scan_materials(self.root)
             result['materials'] = self.learning.pending_events(course['code'])
+        if args.get('context') or args.get('day') or args.get('calendar'):
+            result['context'] = SERVICE_HANDLERS['context'](self, {}, {}, args, '')
         return result
 
     def start(self, args):
-        code = text(args.get('course'), '课程').upper()
-        if not re.fullmatch(r'[A-Za-z0-9_-]+', code):
-            raise ValueError('课程代码只使用字母、数字、横线或下划线')
-        row = self.conn.execute('SELECT * FROM courses WHERE code=?', (code,)).fetchone()
-        if row is None:
-            self.tasks.add_course(code, args.get('name') or code)
-            self.learning.setup_course_context(self.root, code)
-        course = self.course(code)
-        version = self.active(text(args.get('flow'), '流程'), course['id'])
+        flow = text(args.get('flow'), '流程')
+        base = self.active(flow, '*')
+        course = None
+        if base['definition'].get('scope', 'course') == 'course':
+            code = text(args.get('course'), '课程').upper()
+            if not re.fullmatch(r'[A-Za-z0-9_-]+', code):
+                raise ValueError('课程代码只使用字母、数字、横线或下划线')
+            row = self.conn.execute('SELECT * FROM courses WHERE code=?', (code,)).fetchone()
+            if row is None:
+                self.tasks.add_course(code, args.get('name') or code)
+            if self.course(code)['id'] not in self.learning.course_roots(self.root):
+                self.learning.setup_course_context(self.root, code)
+            course = self.course(code)
+        version = self.active(flow, course['id'] if course else '*')
         identifier = str(uuid.uuid4())
         self.conn.execute('INSERT INTO flow_runs(id,course,session,version) VALUES (?,?,?,?)',
-                          (identifier, course['id'], args.get('session') or '', version['id']))
+                          (identifier, course['id'] if course else None, args.get('session') or '', version['id']))
         return self.status(self.run(identifier))
 
     def advance(self, args, operation):
@@ -229,7 +306,7 @@ class Store:
         transformed = run_handler(step, inputs, {'course': run['course'], 'history': run['history']})
         result = HANDLERS[step['kind']](self, run, step, transformed, operation)
         history = run['history'] + [{'step': step['id'], 'kind': step['kind'], 'input': inputs,
-                                     'result': result, 'version': run['version']}]
+                                     'result': result, 'version': run['version'], 'operation': operation}]
         completed = {item['step'] for item in history}
         definition = self.version(run['version'])['definition']
         status = 'completed' if all(item['id'] in completed for item in definition['steps']) else 'open'
@@ -241,10 +318,14 @@ class Store:
         flow = text(args.get('flow'), '流程')
         scope = self.course(args['course'])['id'] if args.get('course') else '*'
         current = self.active(flow, scope)
+        if scope != '*' and current['definition'].get('scope') == 'workspace':
+            raise ValueError('全局操作的流程修改使用全局范围')
         action = args.get('action')
         if action == 'preview':
             reason = text(args.get('reason'), '用户要求')
             definition = validate(args['definition'])
+            if definition.get('scope', 'course') != current['definition'].get('scope', 'course'):
+                raise ValueError('流程的账本范围不能在版本切换中改变')
             # Generated code is trusted application code. Check it in a separate
             # process with a temporary working directory, not in the live worker.
             with tempfile.TemporaryDirectory() as directory:
@@ -281,7 +362,7 @@ class Store:
             raise ValueError('已完成的学习记录不切换流程')
         reason = text(args.get('reason'), '切换依据')
         old = self.version(run['version'])
-        latest = self.active(old['flow'], run['course'])
+        latest = self.active(old['flow'], run['course'] or '*')
         # Preserve past results. A changed completed step is not silently reused.
         previous = {step['id']: step for step in old['definition']['steps']}
         completed = {item['step'] for item in run['history']}
@@ -301,30 +382,89 @@ class Store:
             return self.read(args)
         operation = text(request.get('id'), '操作标识')
         fingerprint = digest({'action': action, 'args': args})
-        with db.atomic(self.conn):
-            prior = self.conn.execute('SELECT * FROM flow_operations WHERE id=?', (operation,)).fetchone()
-            if prior:
-                if prior['fingerprint'] != fingerprint:
-                    raise ValueError('同一操作不能使用不同输入')
-                return json.loads(prior['result'])
-            if action == 'start':
-                result = self.start(args)
-            elif action == 'advance':
-                result = self.advance(args, operation)
-            elif action == 'change':
-                result = self.change(args)
-            elif action == 'switch':
-                result = self.switch(args)
-            else:
-                raise ValueError('未知操作')
-            self.conn.execute('INSERT INTO flow_operations VALUES (?,?,?)', (operation, fingerprint, encoded(result)))
+        try:
+            with db.atomic(self.conn):
+                prior = self.conn.execute('SELECT * FROM flow_operations WHERE id=?', (operation,)).fetchone()
+                if prior:
+                    if prior['fingerprint'] != fingerprint:
+                        raise ValueError('同一操作不能使用不同输入')
+                    return json.loads(prior['result'])
+                if action == 'start':
+                    result = self.start(args)
+                elif action == 'advance':
+                    result = self.advance(args, operation)
+                elif action == 'change':
+                    result = self.change(args)
+                elif action == 'switch':
+                    result = self.switch(args)
+                else:
+                    raise ValueError('未知操作')
+                self.conn.execute('INSERT INTO flow_operations VALUES (?,?,?)', (operation, fingerprint, encoded(result)))
+        except BaseException:
+            self.recovery_warnings = self.recover_files()
+            raise
         warnings = self.cleanup()
         if warnings:
             result = dict(result, recovery_warnings=warnings)
         return result
 
+    def publish_views(self):
+        # Recover an interrupted publication from the committed latest plan.
+        # Earlier plans cannot overwrite a newer checklist.
+        with db.atomic(self.conn, bump_revision=False):
+            latest, latest_order = None, -1
+            for row in self.conn.execute('SELECT id,rowid FROM flow_runs'):
+                run = self.run(row['id'])
+                item = next((item for item in reversed(run['history']) if item['kind'] == 'daily'), None)
+                if item:
+                    operation = self.conn.execute('SELECT rowid FROM flow_operations WHERE id=?',
+                                                  (item.get('operation'),)).fetchone()
+                    order = operation['rowid'] if operation else row['rowid']
+                    if order > latest_order:
+                        latest, latest_order = (run, item), order
+            if not latest:
+                return
+            run, item = latest
+            marker = self.root / '.study-system/runtime/plan-views' / (run['id'] + '.json')
+            if marker.exists() and json.loads(marker.read_text()).get('operation') == item.get('operation'):
+                return
+            result = item['result']
+            if (self.root / 'TODAY_WORKING.md').exists() and (self.root / '.study-system/runtime/views/TODAY_WORKING.state.json').exists():
+                synced = sync_working_v4(self.conn, self.root / 'TODAY_WORKING.md')
+                if synced['applied']:
+                    self.conn.execute('UPDATE planning_state SET revision=revision+1 WHERE singleton=1')
+            database = str(self.root / '.study-system/data/task_memory.sqlite3')
+            for kind, filename, target in [('working', 'TODAY_WORKING.md', result['day']),
+                    ('week', 'WEEK.md', result['week']), ('backlog', 'BACKLOG.md', result['day'])]:
+                write_learning_view(self.conn, kind, self.root / filename, target, database)
+            db.write_text_atomic(marker, encoded({'run': run['id'], 'day': result['day'], 'operation': item.get('operation')}))
+
+    def backup_ledger(self):
+        # Use the existing backup routine, reading through another connection
+        # while the write lock keeps the committed snapshot stable.
+        with db.atomic(self.conn, bump_revision=False):
+            revision = db.planning_revision(self.conn)
+            folder = self.root / '.study-system/backups'
+            target, marker = folder / 'latest.sqlite3', folder / 'latest.state.json'
+            if target.exists() and marker.exists() and json.loads(marker.read_text()).get('revision') == revision:
+                return
+            source = sqlite3.connect((self.root / '.study-system/data/task_memory.sqlite3').as_uri() + '?mode=ro', uri=True)
+            try:
+                db.backup(source, target)
+            finally:
+                source.close()
+            db.write_text_atomic(marker, encoded({'revision': revision}))
+
     def cleanup(self):
-        warnings = []
+        warnings = self.recover_files()
+        try:
+            self.publish_views()
+        except Exception as error:
+            warnings.append({'error': '计划已保存，清单生成待恢复：' + str(error)})
+        try:
+            self.backup_ledger()
+        except Exception as error:
+            warnings.append({'error': '账本已保存，备份待恢复：' + str(error)})
         for row in self.conn.execute("SELECT id FROM flow_runs WHERE status='completed'"):
             run = self.run(row['id'])
             for item in run['history']:
@@ -341,9 +481,7 @@ class Store:
 def feedback(store, run, step, inputs, operation):
     answers = text(inputs.get('answers'), '原始作答')
     summary = text(inputs.get('summary'), '批改说明')
-    evidence = store.root / '.study-system/evidence' / (digest(operation) + '.json')
-    evidence.parent.mkdir(parents=True, exist_ok=True)
-    db.write_text_atomic(evidence, encoded({'answers': answers, 'summary': summary, 'source': inputs.get('source')}))
+    evidence = store.save_evidence(operation, {'answers': answers, 'summary': summary, 'source': inputs.get('source')})
     issues = inputs.get('issues', [])
     for issue in issues:
         text(issue.get('concept'), '具体错点')
@@ -448,8 +586,11 @@ def custom(store, run, step, inputs, operation):
     return inputs
 
 
+from services import HANDLERS as SERVICE_HANDLERS
+
 HANDLERS = {'feedback': feedback, 'plan': plan, 'review': review, 'task': task, 'tasks': tasks, 'inspect': inspect, 'receipt': receipt, 'custom': custom}
 
+HANDLERS.update(SERVICE_HANDLERS)
 
 def main():
     request = json.load(sys.stdin)

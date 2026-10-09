@@ -353,8 +353,8 @@ class LearningTests(ServiceTestCase):
         service = AssessmentService(self.conn, self.clock)
         with self.service._write():
             _, issues = service.record_assessment({'course': 'COMP1023', 'source_kind': 'other',
-                'summary': 'Independent self-test', 'issues': [{'concept': 'Types', 'issue_type': 'wrong'}]})
-            service.record_issue_result({'issue_id': issues[0], 'result': 'passed'})
+                'summary': 'Independent self-test', 'evidence_ref': 'student original answer record', 'issues': [{'concept': 'Types', 'issue_type': 'wrong'}]})
+            service.record_issue_result({'issue_id': issues[0], 'result': 'passed', 'evidence_ref': 'student independent answer record'})
         self.assertEqual(self.conn.execute('SELECT status FROM learning_issues WHERE id=?', (issues[0],)).fetchone()[0], 'passed')
         self.assertEqual(self.conn.execute('SELECT COUNT(*) FROM tasks').fetchone()[0], 0)
 

@@ -43,8 +43,8 @@ export function apply(ctx: Context, config: Config) {
     render: (_args: object, value: object) => [{ type: 'text' as const, text: JSON.stringify(value) }],
   }
   ctx.effect(() => ctx.tools.register(defineTool({
-    name: 'study_read', description: '读取当前学习进度、课程方法、材料、错点或流程实现。',
-    parameters: { course: { type: 'string' }, run: { type: 'string' } }, output,
+    name: 'study_read', description: '读取学习进度、课程事实与核对版本、作答与错点历史、长期约定或流程实现。context=true 获取完整当前上下文；day 可指定日期。',
+    parameters: { course: { type: 'string' }, run: { type: 'string' }, day: { type: 'string' }, context: { type: 'boolean' }, calendar: { type: 'boolean' } }, output,
     async execute(args, exec) {
       return call('read', { ...args, session: exec.agent?.session.id }, '', exec.signal)
     },
@@ -54,7 +54,7 @@ export function apply(ctx: Context, config: Config) {
     description: '开始或继续学习流程。先读取可执行操作，选择所需操作并保存真实输入和结果；出卷不代表学生已作答。switch 只在用户要求改变正在执行的流程时使用。',
     parameters: {
       action: { type: 'string', enum: ['start', 'advance', 'switch'], required: true },
-      input: { type: 'string', required: true, description: 'JSON 对象。start: course,flow,name；advance: run,step,input；switch: run,reason。' },
+      input: { type: 'string', required: true, description: 'JSON 对象。start: flow,course(课程流程需要),name；全局 daily/memory 无需课程。处理器字段见 study_read 返回的 implementation 和 operations 文件；advance: run,step,input；switch: run,reason。' },
     }, output,
     async execute(args, exec) {
       const input = JSON.parse(args.input)
@@ -81,14 +81,20 @@ export function apply(ctx: Context, config: Config) {
     name: 'study', order: 0, interpolate: false,
     text: '你是学习助手。说话简洁自然，先看材料和学生要求，再决定怎样帮助学习。使用 study 工具读取、执行和修改实际流程；不知道的事实保持未知，不从文件名推断材料类型。读笔记与练习由用户自主安排，不能默认两者有先后，不自动添加用户任务依赖。流程约束模型保存依据与核对事实。用户只需表达学习要求，不让用户填写流程配置、版本或核验字段。技术记录留在工具内部，向用户说明学习上的改变与下一步。修改流程须依据用户要求，验证失败先修正；保留原始作答，不把讲解、笔记或发卷当作掌握。',
   }))
+  const supplied = new Map<string, string>()
+  ctx.effect(() => () => supplied.clear())
   ctx.on('agent/pre-step', async ({ agent, signal }, next) => {
     const decision = await next()
     if (decision.kind === 'reject' || signal.aborted) return decision
     const state = await call('read', { session: agent.session.id }, '', signal)
-    if (!state.pending?.length) return decision
+    const context = { pending: state.pending ?? [], memory: state.memory?.content ?? '', recovery: state.recovery_warnings ?? [] }
+    if (!context.pending.length && !context.memory && !context.recovery.length) return decision
+    const content = JSON.stringify(context)
+    if (supplied.get(agent.session.id) === content) return decision
+    supplied.set(agent.session.id, content)
     return { ...decision, messages: [...decision.messages, createUserMessage({
       source: { kind: 'study' },
-      content: [{ type: 'text', text: `当前学习流程（内部上下文）：${JSON.stringify(state.pending)}` }],
+      content: [{ type: 'text', text: `当前学习流程（内部上下文）：${content}` }],
     })] }
   })
 }
