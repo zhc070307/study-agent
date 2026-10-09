@@ -123,7 +123,33 @@ const {chromium}=require(process.env.STUDY_UI_PLAYWRIGHT_MODULE || path.join(pac
     const {execFileSync}=require('node:child_process');
     const result=JSON.parse(execFileSync('python3',['-c',`import sqlite3,json,sys; c=sqlite3.connect(sys.argv[1]); print(json.dumps({'assessments':c.execute('SELECT COUNT(*) FROM assessment_attempts').fetchone()[0],'flows':c.execute('SELECT COUNT(*) FROM flow_active WHERE flow="memory"').fetchone()[0],'answers':c.execute('SELECT COUNT(*) FROM desktop_answers').fetchone()[0]}))`,path.join(data,'.study-system/data/task_memory.sqlite3')],{encoding:'utf8'}));
     assert.equal(result.assessments,1);assert.equal(result.flows,1);assert.ok(result.answers>=2);
-    console.log('Cloud browser end-to-end passed: persistent files/tasks/chat/answers; SDK tools and workflow change; feedback ledger; actual Chinese PDF, page images/quotes, failure recovery and stop. Scripted model only.');
+    // Third perspective: close a semester, start another, and recover the old one.
+    await page.locator('#back').click();if(await page.locator('#clear-folder').isVisible())await page.locator('#clear-folder').click();
+    await page.locator('[data-folder="'+folder.id+'"]').click();
+    const removable=(await api('/api/state')).files.find(f=>f.name==='新文件.md');
+    await page.locator('[data-id="'+removable.id+'"] .file-check').check();
+    page.once('dialog',dialog=>dialog.accept());await page.locator('#remove-files').click();
+    await page.waitForSelector('#file-trash:not([hidden])');
+    assert.ok((await api('/api/state')).trash.some(f=>f.id===removable.id));
+    await page.locator('#file-trash').click();await page.locator('#picker-body input[value="'+removable.id+'"]').check();await page.locator('#picker-confirm').click();
+    await page.waitForSelector('button[aria-label="打开 新文件.md"]');
+    await page.locator('#semester-menu').click();await page.locator('#semester-action').selectOption('create');
+    page.once('dialog',dialog=>dialog.accept('下个学期'));await page.locator('#picker-confirm').click();
+    await page.waitForFunction(()=>document.querySelector('#semester-menu').textContent==='下个学期');
+    const next=await api('/api/state');assert.equal(next.files.length,0);assert.equal(next.tasks.length,0);assert.equal(next.courses.length,0);
+    assert.ok(next.agreements.references.some(r=>r.scope==='learning'&&r.key==='学习安排'));
+    await page.locator('#semester-menu').click();await page.locator('#picker-body input[value="initial"]').check();await page.locator('#semester-action').selectOption('switch');await page.locator('#picker-confirm').click();
+    await page.waitForFunction(()=>document.querySelector('#semester-menu').textContent==='当前学期');
+    assert.ok((await api('/api/state')).files.some(f=>f.id===removable.id));
+    await page.locator('#semester-menu').click();await page.locator('#semester-action').selectOption('archive');
+    page.once('dialog',dialog=>dialog.accept());await page.locator('#picker-confirm').click();
+    await page.waitForFunction(()=>document.querySelector('#semester-menu').textContent.includes('已归档'));
+    assert.ok(await page.locator('#prompt').isDisabled());
+    await page.locator('#semester-menu').click();await page.locator('#semester-action').selectOption('reopen');await page.locator('#picker-confirm').click();
+    await page.waitForFunction(()=>document.querySelector('#semester-menu').textContent==='当前学期');
+    assert.ok(await page.locator('#prompt').isEnabled());
+    assert.deepEqual(errors,[]);
+    console.log('Cloud browser end-to-end passed: persistent files/tasks/chat/answers; SDK tools and workflow change; feedback ledger; actual Chinese PDF, page images/quotes, failure recovery and stop; scoped memory, semester change/archive/reopen and file removal/restore. Scripted model only.');
   } catch(error){const {execFileSync}=require('node:child_process');const events=execFileSync('python3',['-c',`import pathlib,json,sys; print(json.dumps([json.loads(line)['data'] for p in pathlib.Path(sys.argv[1]).rglob('*.jsonl') for line in p.read_text().splitlines() if json.loads(line).get('type')=='turn/end'],ensure_ascii=False))`,data],{encoding:'utf8'});throw new Error(error.stack+'\nSDK outcomes: '+events+'\nServer: '+diagnostics);}
   finally {await browser?.close();processChild.kill('SIGTERM');await new Promise(resolve=>processChild.once('exit',resolve));fs.rmSync(data,{recursive:true,force:true});}
 })().catch(error=>{console.error(error);process.exit(1);});

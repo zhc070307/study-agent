@@ -46,7 +46,7 @@ probe_file=packages/test-support/agent-loop-testkit/tests/study-agent-verificati
 [[ ! -e "$probe_file" ]] || { echo 'Verification target already exists.' >&2; exit 1; }
 probe_target="$harness_root/$probe_file"
 cp "$project_root/verification/deepseek-harness/study-bridge.spec.ts" "$probe_target"
-STUDY_SOURCE="$project_root/study-system/app/task-memory/src" pnpm exec vitest run \
+STUDY_SOURCE="$project_root/packages/learning/src" pnpm exec vitest run \
   packages/core/tools/tests/tools.spec.ts \
   packages/core/tools/tests/execution-mode.spec.ts \
   packages/core/agent-loop/tests/resume.spec.ts \

@@ -42,7 +42,7 @@ artifacts/
 *.egg-info/
 .build/
 _CodeSignature/
-study-system/tools/calendar-events/calendar-events
+packages/learning/tools/calendar-events/calendar-events
 .study-system/
 .study-workspace.json
 backups/

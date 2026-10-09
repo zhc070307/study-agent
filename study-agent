@@ -8,9 +8,9 @@ PROJECT = Path(__file__).resolve().parent
 arguments = sys.argv[1:]
 command = arguments.pop(0) if arguments and arguments[0] in ('serve', 'web', 'service', 'setup', 'check') else 'serve'
 if command in ('setup', 'check'):
-    raise SystemExit(subprocess.call(['bash', str(PROJECT / 'harness' / (command + '.sh'))] + arguments))
+    raise SystemExit(subprocess.call(['bash', str(PROJECT / 'scripts' / (command + '.sh'))] + arguments))
 if command == 'web':
-    raise SystemExit(subprocess.call([sys.executable, str(PROJECT / 'harness/web.py')] + arguments))
+    raise SystemExit(subprocess.call([sys.executable, str(PROJECT / 'packages/agent/web.py')] + arguments))
 if command == 'service':
     data = PROJECT / '.data'
     if '--data' in arguments:
@@ -19,5 +19,5 @@ if command == 'service':
             raise SystemExit('--data requires an independent study directory')
         data = Path(arguments[index + 1]).resolve()
         del arguments[index:index + 2]
-    raise SystemExit(subprocess.call([sys.executable, str(PROJECT / 'study-system/study'), '--workspace', str(data)] + arguments))
-raise SystemExit(subprocess.call([sys.executable, str(PROJECT / 'harness/run.py')] + arguments))
+    raise SystemExit(subprocess.call([sys.executable, str(PROJECT / 'packages/learning/study'), '--workspace', str(data)] + arguments))
+raise SystemExit(subprocess.call([sys.executable, str(PROJECT / 'packages/agent/run.py')] + arguments))

@@ -14,7 +14,7 @@ import { tmpdir } from 'node:os'
 import { expect, it } from 'vitest'
 
 const source = process.env.STUDY_SOURCE
-if (!source) throw new Error('Set STUDY_SOURCE to study-system/app/task-memory/src')
+if (!source) throw new Error('Set STUDY_SOURCE to packages/learning/src')
 
 function python(database: string, body: string): string {
   return execFileSync('python3', ['-c', body, database], {

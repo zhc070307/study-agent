@@ -7,11 +7,13 @@ const icon = name => `<svg aria-hidden="true"><use href="#i-${name}"/></svg>`;
 const files = [];
 const folders = [];
 const tasks = [];
+let semesterId=null,semesterList=null,readonly=false,removedFiles=[];
 let serverVersion = -1, applying = false, metadataTimer, busy = false, sending = false;
 let savedMetadata = '', syncChain = Promise.resolve();
 const requestId = () => crypto.randomUUID();
 async function api(path, value) {
-  const response = await fetch(path, value === undefined ? {} : {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(value)});
+  const headers=semesterId?{'X-Study-Semester':semesterId}:{};
+  const response = await fetch(path, value === undefined ? {headers} : {method:'POST',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify(value)});
   const result = await response.json();
   if (!response.ok) throw new Error(result.error || '操作失败');
   return result;
@@ -19,7 +21,7 @@ async function api(path, value) {
 const operation = (action,args) => api('/api/workspace',{action,args,id:requestId()});
 function metadata() {return JSON.stringify({folders,files:files.map((file,order)=>({id:file.id,name:file.name,folder:file.folder,order}))});}
 function persistMetadata() {
-  if (applying || serverVersion < 0) return;
+  if (readonly || applying || serverVersion < 0) return;
   clearTimeout(metadataTimer);
   metadataTimer = setTimeout(()=>{
     syncChain = syncChain.then(async()=>{
@@ -32,6 +34,13 @@ function persistMetadata() {
 }
 async function refresh(force=false) {
   const data = await api('/api/state');
+  if(semesterId && semesterId!==data.semesters.active){location.reload();return;}
+  semesterList=data.semesters;semesterId=data.semesters.active;
+  const semester=data.semesters.items.find(s=>s.id===semesterId);readonly=semester.status!=='open';
+  $('#semester-menu').textContent=semester.name+(readonly?' · 已归档':'');
+  removedFiles=data.trash||[];$('#file-trash').hidden=!removedFiles.length;
+  for(const element of $$('#new-folder,#new-task,#add-files,#remove-files,#move-files,#move-first,#rename,#edit-file,#compile-file,#prompt,.send-button,.quick-actions button'))element.disabled=readonly;
+  for(const file of data.files){file.source+='?semester='+semesterId;file.url+='&semester='+semesterId;}
   busy=data.runtime.status==='running';
   if(data.warnings?.length)$('.prototype-note').textContent='课程文件有其他修改，已保留版本，待助理核对';
   $('#stop-agent').hidden=!busy;
@@ -60,8 +69,9 @@ async function refresh(force=false) {
   if(firstLoad && data.drafts.__layout){const layout=data.drafts.__layout;state.tabs=(layout.tabs||[]).filter(id=>getFile(id));state.folder=folders.some(f=>f.id===layout.folder)||layout.folder==='unfiled'?layout.folder:null;if(layout.active && getFile(layout.active))openFile(layout.active);else renderDesktop();}
   applying=false;
 }
-function persistLayout(){api('/api/workspace',{action:'draft',args:{channel:'__layout',value:{active:state.active,tabs:state.tabs,folder:state.folder,deskScroll:state.deskScroll}}}).catch(()=>{});}
+function persistLayout(){if(readonly)return;api('/api/workspace',{action:'draft',args:{channel:'__layout',value:{active:state.active,tabs:state.tabs,folder:state.folder,deskScroll:state.deskScroll}}}).catch(()=>{});}
 function persistDraft() {
+  if(readonly)return;
   const key=channel();
   const value={prompt:$('#prompt').value,contexts:[...state.contexts],quote:state.quote,scroll:$('.workspace').scrollTop};
   state.compositions.set(key,{...value,contexts:new Set(value.contexts)});
@@ -83,7 +93,7 @@ function markdownPreview(text) {
   });
 }
 function renderTasks() {
-  $('#tasks').innerHTML = tasks.map(task => `<div class="task-row ${task.done ? 'done' : ''}"><input type="checkbox" data-task="${esc(task.id)}" aria-label="完成任务 ${esc(task.title)}" ${task.done ? 'checked' : ''} ${task.actor==='agent' ? 'disabled' : ''}><button data-task-id="${esc(task.id)}" data-task-open="${esc(task.file || '')}">${esc(task.title)}</button><span>${esc(getFile(task.file)?.name || '')}</span></div>`).join('');
+  $('#tasks').innerHTML = tasks.map(task => `<div class="task-row ${task.done ? 'done' : ''}"><input type="checkbox" data-task="${esc(task.id)}" aria-label="完成任务 ${esc(task.title)}" ${task.done ? 'checked' : ''} ${readonly || task.actor==='agent' ? 'disabled' : ''}><button data-task-id="${esc(task.id)}" data-task-open="${esc(task.file || '')}">${esc(task.title)}</button><span>${esc(getFile(task.file)?.name || '')}</span></div>`).join('');
 }
 const state = {folder:null, selected:new Set(), contexts:new Set(), quote:null, active:null, compare:null, tabs:[], messages:new Map(), compositions:new Map(), scrolls:new Map(), answers:new Map(), deskScroll:0, nextId:1};
 let draggedId = null;
@@ -127,7 +137,7 @@ function renderConversation() {
   container.innerHTML = '';
   if (!messages.length) {
     const welcome = document.createElement('div'); welcome.className = 'welcome';
-    welcome.innerHTML = '<p>有什么需要我帮忙的？</p>';
+    welcome.innerHTML = readonly ? '<p>这个学期已归档，文件和记录保留。需要修改或提问时，可以重新开始。</p>' : '<p>可以放入课程材料，也可以直接告诉我你想学什么。</p>';
     container.append(welcome);
   }
   for (const message of messages) {
@@ -253,7 +263,7 @@ function filePicker(title, callback, exclude = null, multiple = false) {
 }
 $('#picker').addEventListener('close', () => {if ($('#picker').returnValue === 'confirm' && pickerCallback) pickerCallback(); pickerCallback = null;});
 function createFolder() {
-  showPicker('新建文件夹', '<label><span class="sr-only">文件夹名称</span><input class="picker-input" id="folder-name" maxlength="60" placeholder="给它一个名字" required></label>', () => {const name = $('#folder-name').value.trim(); if (!name) return; folders.push({id:`folder-${state.nextId++}`, name}); renderDesktop(); toast('已新建文件夹');});
+  showPicker('新建文件夹', '<label><span class="sr-only">文件夹名称</span><input class="picker-input" id="folder-name" maxlength="60" placeholder="给它一个名字" required></label>', () => {const name = $('#folder-name').value.trim(); if (!name) return; folders.push({id:requestId(), name}); renderDesktop(); toast('已新建文件夹');});
 }
 function moveFiles() {
   if (!state.selected.size) return;
@@ -342,14 +352,15 @@ $('#document-area').addEventListener('touchend', () => setTimeout(captureSelecti
 $('#ask-selection').addEventListener('click', () => {if (!state.pendingQuote) return; state.quote = state.pendingQuote; state.contexts.add(state.quote.file); renderContexts(); collapseAssistant(false); $('#prompt').focus(); $('#prompt').placeholder = '关于这段内容，你想问什么？'; $('#quote-bar').hidden = true;});
 $('#add-files').addEventListener('click', () => $('#file-input').click());
 async function importFiles(incoming) {
+  let saved=0;
   for (const raw of incoming) {
     if(raw.size>20*1024*1024){toast(`${raw.name} 超过 20 MB`);continue;}
     try {
       const data=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result.split(',')[1]);reader.onerror=reject;reader.readAsDataURL(raw);});
-      await operation('create',{name:raw.name,mime:raw.type,data,folder:state.folder==='unfiled'?null:state.folder});
+      await operation('create',{name:raw.name,mime:raw.type,data,folder:state.folder==='unfiled'?null:state.folder});saved++;
     }catch(error){toast(error.message);}
   }
-  await refresh(true);toast('文件已保存');
+  await refresh(true);if(saved)toast('已保存 '+saved+' 份文件');
 }
 $('#file-input').addEventListener('change', async event => {await importFiles(event.target.files); event.target.value = '';});
 $('.workspace').addEventListener('dragover', event => {if (event.dataTransfer.types.includes('Files')) event.preventDefault();});
@@ -387,6 +398,33 @@ $('#history-file').addEventListener('click',async()=>{
 });
 
 window.addEventListener('pagehide',()=>{
+  if(readonly)return;
   const key=channel(),value={prompt:$('#prompt').value,contexts:[...state.contexts],quote:state.quote,scroll:$('.workspace').scrollTop};
-  navigator.sendBeacon('/api/workspace',new Blob([JSON.stringify({action:'draft',args:{channel:key,value}})],{type:'application/json'}));
+  navigator.sendBeacon('/api/workspace',new Blob([JSON.stringify({action:'draft',args:{channel:key,value},semester:semesterId})],{type:'application/json'}));
 });
+
+// One unobtrusive menu; ordinary learning does not require a configuration page.
+$('#semester-menu').addEventListener('click',()=>{
+  if(!semesterList)return;
+  const choices=semesterList.items.map(s=>`<label class="picker-option"><input type="radio" name="semester" value="${esc(s.id)}" ${s.id===semesterId?'checked':''}><span>${esc(s.name)}${s.status==='archived'?' · 已归档':s.status==='removed'?' · 已移除':''}</span></label>`).join('');
+  showPicker('学期',choices+`<select id="semester-action" class="picker-input" aria-label="学期操作"><option value="switch">打开选中学期</option><option value="create">开始新学期</option><option value="rename">重命名</option><option value="archive">归档，保留记录</option><option value="reopen">重新开始</option><option value="remove">移除，可恢复</option><option value="restore">恢复已移除学期</option><option value="export">下载选中学期备份</option></select><p class="picker-note">通用学习习惯和助理流程独立保存，换学期仍保留。旧任务与课程状态不会带入新学期。</p>`,async()=>{
+    const action=$('#semester-action').value,id=$('#picker-body input:checked')?.value;
+    const selected=semesterList.items.find(s=>s.id===id);
+    if(!selected)return;
+    if(action==='export'){location.href='/api/semester-export?semester='+id;return;}
+    const args={semester:id,expected:semesterList.version};
+    if(action==='create'||action==='rename'){args.name=window.prompt(action==='create'?'新学期叫什么？':'学期名称',action==='rename'?selected.name:'');if(!args.name)return;}
+    if(action==='archive'&&!window.confirm('归档后保留文件、对话和未完成任务，可以重新开始。现在归档“'+selected.name+'”？'))return;
+    if(action==='remove'){args.confirm=window.prompt('移除后可以恢复。请输入要移除的学期名称：'+selected.name);if(args.confirm===null)return;}
+    try{await syncChain;await api('/api/semesters',{action,args});location.reload();}catch(error){toast(error.message);await refresh();}
+  });
+});
+$('#remove-files').addEventListener('click',async()=>{
+  const chosen=[...state.selected].map(getFile).filter(Boolean);
+  if(!chosen.length||!window.confirm('移除这 '+chosen.length+' 份文件？可从“已移除”恢复；课程原件、任务与学习记录保留。'))return;
+  try{for(const file of chosen)await operation('remove_file',{file:file.id,expected:file.sha256});state.selected.clear();await refresh(true);}catch(error){toast(error.message);}
+});
+$('#file-trash').addEventListener('click',()=>showPicker('恢复文件',removedFiles.map(f=>`<label class="picker-option"><input type="radio" name="removed-file" value="${esc(f.id)}"><span>${esc(f.name)}</span></label>`).join(''),async()=>{
+  const file=removedFiles.find(f=>f.id===$('#picker-body input:checked')?.value);if(!file)return;
+  try{await operation('restore_file',{file:file.id,expected:file.sha256});await refresh(true);}catch(error){toast(error.message);}
+}));
