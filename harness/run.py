@@ -21,7 +21,7 @@ def patch(data):
         {'id': 'system-prompt', 'config': {'includeHarnessIdentity': False,
           'includeRuntimeContext': False, 'personaPrefix': '你是学习助手。'}},
         {'id': 'sandbox-policy', 'config': {'mode': 'danger-full-access', 'workspaceRoot': str(data)}},
-        {'insert': [{'id': 'study', 'name': str(PROJECT / 'harness/study.ts'), 'config': {'data': str(data)}}]},
+        {'insert': [{'id': 'attachment-local', 'name': '@deepseek-ai/dsh-attachment-local'}, {'id': 'study', 'name': str(PROJECT / 'harness/study.ts'), 'config': {'data': str(data)}}]},
     ]
 
 

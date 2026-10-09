@@ -6,9 +6,11 @@ import sys
 
 PROJECT = Path(__file__).resolve().parent
 arguments = sys.argv[1:]
-command = arguments.pop(0) if arguments and arguments[0] in ('serve', 'service', 'setup', 'check') else 'serve'
+command = arguments.pop(0) if arguments and arguments[0] in ('serve', 'web', 'service', 'setup', 'check') else 'serve'
 if command in ('setup', 'check'):
     raise SystemExit(subprocess.call(['bash', str(PROJECT / 'harness' / (command + '.sh'))] + arguments))
+if command == 'web':
+    raise SystemExit(subprocess.call([sys.executable, str(PROJECT / 'harness/web.py')] + arguments))
 if command == 'service':
     data = PROJECT / '.data'
     if '--data' in arguments:

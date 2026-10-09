@@ -15,7 +15,7 @@ description: 为已议定采用自组巩固卷的课程选题与编排：能力�
 
 在现有 PRACTICE_SELECTION.md 本课段原位写草案：证据、重点能力、各能力练习量、题型与小问、排除与去重理由、未覆盖能力的后续检查条件。先确定重点再选题，不要求每卷覆盖全部主题；技法熟练度、方法选择、条件辨析、证明或建模按该课实际能力要求安排。难度来自推理，不靠繁琐计算、模糊语言或超纲制造。
 
-后续新卷以约10道大题为目标，按当次重点和实际总负担调整，不为凑题数增加题目。个别微积分计算大题可含3–4个相关短小题；不能全卷都按每题3–4个小题编排，也不能把多道完整题藏进小问。草案及成品核验同时统计大题、小题和完整计算／证明／编程任务，检查整卷负担。已有未完成卷继续原卷，不因新题量偏好自动重制；学生明确要求修订时保留原作答。
+题量和小问数量按用户要求、课程约定、当次重点和实际负担决定，不固定题数，不为凑题数增加题目，也不把多道完整题藏进小问。草案及成品核验同时统计大题、小题和完整计算／证明／编程任务，检查整卷负担。已有未完成卷继续原卷，不因新题量偏好自动重制；学生明确要求修订时保留原作答。
 
 选题提高真实历史错点及其相关能力的比重。优先处理尚未通过复测、再次出错或反复不稳定的发现；已通过的历史错点按必要迁移与间隔检验选取，不机械全部重做。可选原题复测或课程认可题源中的同类题，须能关联原 assessment／learning_issue 证据；不得虚构错点或原因。保留未充分练习的已讲能力，不让整卷只剩旧题重复。草案列出本次采用的错点证据、对应题／小问及暂不采用的理由，无真实错误记录时明确写无，不硬凑比例。
 
@@ -27,13 +27,14 @@ description: 为已议定采用自组巩固卷的课程选题与编排：能力�
 
 题面完整且答案隐藏，作答区留空白，不画横线或设置卡点栏。编译后逐页检查字形、公式、图形、裁切和留白；对照草案核对范围、重点、练习量、推理要求和去重。未兑现则修订，必要时说明有证据的草案变化。
 
-按本 Skill 的 accept 保存实际核验与成品哈希到现有 evidence 回执，然后更新原任务入口与剩余条件、来源及发卷历史、课程状态和必要视图。发卷不代表作答。学生反馈按 Skill 入账并影响后续选题，保留首次表现与复测历史。验收后运行 finish_work；中间文件不作为长期引用。
+按本 Skill 的 accept 保存实际核验与成品哈希到现有 evidence 回执，然后更新原任务入口与剩余条件、来源及发卷历史、课程状态和必要视图。发卷不代表作答。学生反馈按 Skill 入账并影响后续选题，保留首次表现与复测历史。源码、题目、原始作答和 PDF 保留可恢复历史；仅清理不再需要的编译残留。
 
 
 ## 草案完成后、正文之前
 
-```bash
-python3 ../study-system/tools/delivery_review.py prepare .study-system/runtime/WORK --course COURSE --kind worksheet --input .study-system/PRACTICE_SELECTION.md
+```text
+study_desktop prepare: course=COURSE, kind=worksheet, brief=.study-system/PRACTICE_SELECTION.md
+create 源码时带返回的 preparation 身份，之后 compile
 ```
 
 完成选题与编排后，按本 Skill 的试卷核验段对照上述草案和实际成品验收。此 Skill 不固定课程名单；本学期题源、节奏、批改与例外在 COURSE.md。
@@ -46,9 +47,9 @@ python3 ../study-system/tools/delivery_review.py prepare .study-system/runtime/W
 
 工作目录中的 review.json 写入实际 artifact_sha256、page_count、pages（每页的 page、status=passed、summary），以及 checks：source_scope、layout、task_handoff、plan_alignment、deduplication、source_questions、question_load、issue_weighting。question_load 记录大题数、小题分布和整体负担；issue_weighting 记录真实历史错点如何影响选题及对应证据，无记录时据实说明。填写实际逐题核验、草案对照和视觉检查，不用泛泛“已检查”替代。
 
-```bash
-python3 ../study-system/tools/delivery_review.py accept .study-system/runtime/WORK --artifact COURSE/practice/FINAL.pdf --receipt .study-system/evidence/RECEIPT.json --review .study-system/runtime/WORK/review.json
-python3 ../study-system/tools/finish_work.py .study-system/runtime/WORK --artifact COURSE/practice/FINAL.pdf --receipt .study-system/evidence/RECEIPT.json
+```text
+study_desktop page: file=PDF身份, page=实际页码
+study_desktop review: file, sha256, pages, checks, kind=worksheet, course, brief
 ```
 
-accept 合并现有 JSON 回执，保存原草案和实际核验，不新增要求文件。输入、课程或出卷规范改变、页码遗漏、未通过页或哈希不符时拒绝验收。验收后更新原任务、草案与发卷历史，按运行 Skill 更新必要视图，再清理本轮临时目录。工具不证明实际读题、渲染或语义核对已经发生，Codex 须如实执行。历史已验收卷不追补。
+accept 合并现有 JSON 回执，保存原草案和实际核验，不新增要求文件。输入、课程或出卷规范改变、页码遗漏、未通过页或哈希不符时拒绝验收。验收后更新原任务、草案与发卷历史，按运行 Skill 更新必要视图，再清理本轮临时目录。工具不证明实际读题、渲染或语义核对已经发生，当前助理须如实执行。历史已验收卷不追补。

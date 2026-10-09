@@ -1,31 +1,72 @@
 'use strict';
-// Standalone interaction prototype. No model requests, server storage, or personal data.
+// The desktop and assistant share the cloud workspace and upstream Harness.
 const $ = (selector, parent = document) => parent.querySelector(selector);
 const $$ = (selector, parent = document) => [...parent.querySelectorAll(selector)];
 const esc = value => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const icon = name => `<svg aria-hidden="true"><use href="#i-${name}"/></svg>`;
-const files = [
-  {id:'notes', name:'导数笔记.md', course:'微积分', folder:'notes-folder', kind:'text', label:'Markdown', mime:'text/markdown', source:'samples/notes/derivatives.md'},
-  {id:'slides', name:'导数与微分.pdf', course:'微积分', folder:'materials-folder', kind:'pdf', label:'PDF', mime:'application/pdf', source:'samples/materials/derivatives.pdf'},
-  {id:'practice', name:'变化率练习.txt', course:'微积分', folder:'practice-folder', kind:'practice', label:'文本', mime:'text/plain', source:'samples/practice/questions.txt'},
-  {id:'answer', name:'解题思路.txt', course:'微积分', folder:'practice-folder', kind:'text', label:'文本', mime:'text/plain', source:'samples/practice/answer.txt'},
-  {id:'linear', name:'向量与坐标.tex', course:'线性代数', folder:'notes-folder', kind:'text', label:'LaTeX 源码', mime:'text/x-tex', source:'samples/notes/vectors.tex'},
-  {id:'ideas', name:'想讨论的问题.txt', course:'未归属', folder:null, kind:'text', label:'文本', mime:'text/plain', source:'samples/inbox/questions.txt'}
-];
-async function loadFile(file) {
-  try {
-    const response = await fetch(file.source);
-    if (!response.ok) throw new Error(`读取失败 (${response.status})`);
-    if (file.mime.startsWith('text/')) file.text = await response.text();
-    else {await response.arrayBuffer(); file.url = file.source;}
-  } catch (error) {file.loadError = error.message;}
+const files = [];
+const folders = [];
+const tasks = [];
+let serverVersion = -1, applying = false, metadataTimer, busy = false, sending = false;
+let savedMetadata = '', syncChain = Promise.resolve();
+const requestId = () => crypto.randomUUID();
+async function api(path, value) {
+  const response = await fetch(path, value === undefined ? {} : {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(value)});
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.error || '操作失败');
+  return result;
 }
-const folders = [{id:'materials-folder', name:'课程材料'}, {id:'notes-folder', name:'笔记与想法'}, {id:'practice-folder', name:'练习与作答'}];
-const tasks = [
-  {id:'task-notes', title:'查看导数笔记', file:'notes', done:false},
-  {id:'task-practice', title:'完成变化率练习', file:'practice', done:false},
-  {id:'task-material', title:'核对导数与微分讲义', file:'slides', done:false}
-];
+const operation = (action,args) => api('/api/workspace',{action,args,id:requestId()});
+function metadata() {return JSON.stringify({folders,files:files.map((file,order)=>({id:file.id,name:file.name,folder:file.folder,order}))});}
+function persistMetadata() {
+  if (applying || serverVersion < 0) return;
+  clearTimeout(metadataTimer);
+  metadataTimer = setTimeout(()=>{
+    syncChain = syncChain.then(async()=>{
+      const current = metadata(); if (current === savedMetadata) return;
+      $('.prototype-note').textContent='正在保存…';
+      try {await operation('metadata',{...JSON.parse(current),expected:serverVersion});savedMetadata=current;await refresh(false);$('.prototype-note').textContent='已保存';}
+      catch(error){toast(error.message);await refresh(true);}
+    });
+  },100);
+}
+async function refresh(force=false) {
+  const data = await api('/api/state');
+  busy=data.runtime.status==='running';
+  if(data.warnings?.length)$('.prototype-note').textContent='课程文件有其他修改，已保留版本，待助理核对';
+  $('#stop-agent').hidden=!busy;
+  $('.preview-label').textContent=busy ? '助理处理中' : '学习桌';
+  if (!force && metadata()!==savedMetadata && serverVersion>=0) return;
+  const contentChanged = force || JSON.stringify(files.map(f=>[f.id,f.sha256,f.name,f.folder,f.pdf,f.compile_result,f.accepted])) !== JSON.stringify(data.files.map(f=>[f.id,f.sha256,f.name,f.folder,f.pdf,f.compile_result,f.accepted]));
+  applying=true;
+  const old = new Map(files.map(file=>[file.id,file]));
+  files.splice(0,files.length,...data.files.map(file=>({...old.get(file.id),...file})));
+  folders.splice(0,folders.length,...data.folders);
+  tasks.splice(0,tasks.length,...data.tasks);
+  state.messages=new Map(Object.entries(data.messages));
+  for(const [id,text] of Object.entries(data.answers)) if(!state.answers.has(id)) state.answers.set(id,text);
+  const firstLoad=serverVersion<0;
+  if (firstLoad) {
+    for(const [id,value] of Object.entries(data.drafts)) {
+      state.compositions.set(id,{...value,contexts:new Set(value.contexts||[])});
+      if(value.scroll!==undefined)state.scrolls.set(id,value.scroll);
+    }
+    restoreComposition([]);
+  }
+  serverVersion=data.version;
+  savedMetadata=metadata();
+  renderDesktop(); renderConversation();renderContexts();renderTabs();
+  if(state.active && contentChanged)renderTask();
+  if(firstLoad && data.drafts.__layout){const layout=data.drafts.__layout;state.tabs=(layout.tabs||[]).filter(id=>getFile(id));state.folder=folders.some(f=>f.id===layout.folder)||layout.folder==='unfiled'?layout.folder:null;if(layout.active && getFile(layout.active))openFile(layout.active);else renderDesktop();}
+  applying=false;
+}
+function persistLayout(){api('/api/workspace',{action:'draft',args:{channel:'__layout',value:{active:state.active,tabs:state.tabs,folder:state.folder,deskScroll:state.deskScroll}}}).catch(()=>{});}
+function persistDraft() {
+  const key=channel();
+  const value={prompt:$('#prompt').value,contexts:[...state.contexts],quote:state.quote,scroll:$('.workspace').scrollTop};
+  state.compositions.set(key,{...value,contexts:new Set(value.contexts)});
+  api('/api/workspace',{action:'draft',args:{channel:key,value}}).catch(error=>toast(error.message));
+}
 const pdfDisposers = [];
 function disposePdfReaders() {for (const dispose of pdfDisposers.splice(0)) dispose();}
 function formatFor(file) {
@@ -42,7 +83,7 @@ function markdownPreview(text) {
   });
 }
 function renderTasks() {
-  $('#tasks').innerHTML = tasks.map(task => `<div class="task-row ${task.done ? 'done' : ''}"><input type="checkbox" data-task="${esc(task.id)}" aria-label="完成任务 ${esc(task.title)}" ${task.done ? 'checked' : ''}><button data-task-open="${esc(task.file)}">${esc(task.title)}</button><span>${esc(getFile(task.file).name)}</span></div>`).join('');
+  $('#tasks').innerHTML = tasks.map(task => `<div class="task-row ${task.done ? 'done' : ''}"><input type="checkbox" data-task="${esc(task.id)}" aria-label="完成任务 ${esc(task.title)}" ${task.done ? 'checked' : ''} ${task.actor==='agent' ? 'disabled' : ''}><button data-task-id="${esc(task.id)}" data-task-open="${esc(task.file || '')}">${esc(task.title)}</button><span>${esc(getFile(task.file)?.name || '')}</span></div>`).join('');
 }
 const state = {folder:null, selected:new Set(), contexts:new Set(), quote:null, active:null, compare:null, tabs:[], messages:new Map(), compositions:new Map(), scrolls:new Map(), answers:new Map(), deskScroll:0, nextId:1};
 let draggedId = null;
@@ -53,6 +94,7 @@ const channel = () => state.active || 'desktop';
 const visibleFiles = () => files.filter(file => !state.folder || (state.folder === 'unfiled' ? !file.folder : file.folder === state.folder));
 function toast(message) { $('#toast').textContent = message; $('#toast').hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => {$('#toast').hidden = true;}, 3600); }
 function renderDesktop() {
+  persistMetadata();
   const atRoot = !state.folder;
   const rootFolders = [...folders, {id:'unfiled', name:'未整理'}];
   $('#folders').hidden = !atRoot;
@@ -90,10 +132,11 @@ function renderConversation() {
   }
   for (const message of messages) {
     const div = document.createElement('div'); div.className = `message ${message.role === 'user' ? 'user' : 'assistant-message'}`;
-    const label = document.createElement('span'); label.className = 'message-meta'; label.textContent = message.role === 'user' ? '你' : '助理 · 示例回复'; div.append(label);
+    const label = document.createElement('span'); label.className = 'message-meta'; label.textContent = message.role === 'user' ? '你' : '助理'; div.append(label);
     if (message.refs) { const refs = document.createElement('span'); refs.className = 'message-ref'; refs.textContent = message.refs; div.append(refs); }
-    const body = document.createElement('span'); body.textContent = message.text; div.append(body);
+    const body = document.createElement('div');body.className='chat-body';if(message.role==='assistant')body.innerHTML=markdownPreview(message.text);else body.textContent=message.text;div.append(body);
     if (message.file) {const button = document.createElement('button'); button.className = 'message-artifact'; button.dataset.openArtifact = message.file; button.innerHTML = `${icon('file')}<span>${esc(getFile(message.file).name)}</span>${icon('arrow')}`; div.append(button);}
+    if(message===messages[messages.length-1] && message.role==='assistant') {for(const file of files.filter(f=>f.session==='desktop-'+channel())){const button=document.createElement('button');button.className='message-artifact';button.dataset.openArtifact=file.id;button.textContent=file.name;div.append(button);}}
     container.append(div);
   }
   if (messages.length) container.scrollTop = container.scrollHeight;
@@ -103,6 +146,7 @@ function addMessage(role, text, extra = {}) {
   state.messages.get(key).push({role, text, ...extra}); renderConversation();
 }
 function saveScroll() {
+  persistDraft();
   state.compositions.set(channel(), {prompt:$('#prompt').value, contexts:new Set(state.contexts), quote:state.quote});
   if (!state.active) state.deskScroll = $('.workspace').scrollTop;
   for (const pane of $$('.document-pane')) {
@@ -118,6 +162,7 @@ function restoreComposition(defaultContexts) {
   $('#prompt').value = saved?.prompt || '';
 }
 function openFile(id) {
+  setTimeout(persistLayout,0);
   if (!getFile(id)) return;
   saveScroll(); const changed = state.active !== id;
   state.active = id; state.compare = null;
@@ -129,6 +174,7 @@ function openFile(id) {
   if (matchMedia('(max-width:720px)').matches) collapseAssistant(true);
 }
 function backToDesktop() {
+  setTimeout(persistLayout,0);
   saveScroll(); disposePdfReaders(); state.active = null; state.compare = null; restoreComposition(state.selected);
   $('#desktop').hidden = false; $('#task').hidden = true;
   renderDesktop(); renderContexts(); renderConversation(); renderTabs(); $('.workspace').scrollTop = state.deskScroll;
@@ -138,9 +184,9 @@ function paper(file) {
   let body;
   if (file.text !== undefined) {
     body = formatFor(file) === 'markdown' && file.mode !== 'source' ? `<article class="markdown-body">${markdownPreview(file.text)}</article>` : `<pre class="file-text ${formatFor(file) === 'latex' || file.mode === 'source' ? 'source-text' : ''}">${esc(file.text)}</pre>`;
-    if (file.kind === 'practice') body += '<section class="answer-section"><h3>作答</h3><textarea class="answer-input" aria-label="练习作答" placeholder="写下你的思路……"></textarea><div class="answer-actions"><button class="button subtle save-answer">保存作答</button><button class="button subtle ask-answer">带着作答提问</button><span class="answer-status">仅保存在本页</span></div></section>';
-  } else if (!file.url) body = '<div class="reader-empty">正在打开文件…</div>';
-  else if (file.mime.startsWith('image/')) body = `<img class="file-image" src="${esc(file.url)}" alt="${esc(file.name)}">`;
+    if (file.kind === 'practice') body += '<section class="answer-section"><h3>作答</h3><textarea class="answer-input" aria-label="练习作答" placeholder="写下你的思路……"></textarea><div class="answer-actions"><button class="button subtle save-answer">保存作答</button><button class="button subtle ask-answer">带着作答提问</button><span class="answer-status">作答单独保存，保留历史</span></div></section>';
+  } else if (!file.url) body = '<div class="reader-empty">无法读取此文件</div>';
+  else if (['image/png','image/jpeg','image/webp','image/gif'].includes(file.mime)) body = `<img class="file-image" src="${esc(file.url)}" alt="${esc(file.name)}">`;
   else if (file.mime === 'application/pdf') body = '<div class="pdf-host"><div class="reader-empty">正在打开 PDF…</div></div>';
   else if (file.mime.startsWith('audio/')) body = `<audio controls src="${esc(file.url)}"></audio>`;
   else body = '<div class="reader-empty">此格式暂不支持预览。内容尚未被读取或分类。</div>';
@@ -151,11 +197,19 @@ function renderTabs() {
   $('#back').classList.toggle('active', !state.active);
   $('#back').setAttribute('aria-current', state.active ? 'false' : 'page');
   $('#file-actions').hidden = !state.active;
-  const markdown = state.active && formatFor(getFile(state.active)) === 'markdown';
+  const current=state.active && getFile(state.active);
+  if(current){$('#download-file').href=current.url;$('#download-file').download=current.name;}
+  const markdown = current && formatFor(current) === 'markdown';
+  const latex=current && formatFor(current)==='latex';
+  $('#compile-file').hidden=!latex; $('#view-pdf').hidden=!latex || !current.pdf;
+  $('#edit-file').hidden=!current || current.text===undefined;
+  $('#history-file').hidden=!current || current.text===undefined;
+  $('#view-pdf').textContent=current?.mode==='pdf'?'源码':'PDF';
   $('#reader-modes').hidden = !markdown;
   for (const button of $$('[data-mode]')) {const active = state.active && (getFile(state.active).mode || 'preview') === button.dataset.mode; button.classList.toggle('active', Boolean(active)); button.setAttribute('aria-pressed', String(Boolean(active)));}
 }
 function closeTab(id) {
+  setTimeout(persistLayout,0);
   const current = state.active === id;
   if (current) saveScroll();
   state.tabs = state.tabs.filter(tab => tab !== id);
@@ -170,11 +224,13 @@ function renderTask() {
   $('#document-title').textContent = file.name;
   $('#document-meta').textContent = `${folders.find(folder=>folder.id===file.folder)?.name || '未整理'} / ${file.name}`;
   renderTabs();
-  const ids = state.compare ? [state.active, state.compare] : [state.active];
+  const sourceIds = state.compare ? [state.active, state.compare] : [state.active];
+  const ids=sourceIds.map(id=>{const file=getFile(id);return file.mode==='pdf'&&file.pdf?file.pdf.file:id;});
   $('#document-area').classList.toggle('comparing', Boolean(state.compare));
   $('#document-area').innerHTML = ids.map(id => `<section class="document-pane" data-file="${esc(id)}" aria-label="${esc(getFile(id).name)}">${state.compare ? `<div class="pane-label"><span>${esc(getFile(id).name)}</span>${id === state.compare ? `<button class="icon-button" id="close-compare" aria-label="关闭并排文件">${icon('close')}</button>` : ''}</div>` : ''}${paper(getFile(id))}</section>`).join('');
   for (const pane of $$('.document-pane')) { const answer = $('.answer-input', pane); if (answer) answer.value = state.answers.get(pane.dataset.file) || ''; }
   $('#quote-bar').hidden = true;
+  if (file.compile_result) {const status=document.createElement('div');status.className='compile-status';status.textContent=file.compile_result.ok ? (file.pdf?.stale ? '源码已修改，PDF 待重新编译' : '已编译 · '+file.compile_result.pages+' 页 · '+(getFile(file.pdf?.file)?.accepted?'已核验':'待核验')) : '编译失败，上一版 PDF 已保留';if(!file.compile_result.ok){const details=document.createElement('details');const summary=document.createElement('summary');summary.textContent='查看编译记录';const log=document.createElement('pre');log.textContent=file.compile_result.log;details.append(summary,log);status.append(details);}$('#document-area').prepend(status);}
   for (const pane of $$('.document-pane')) {
     const host = $('.pdf-host',pane); if (!host) continue;
     const file = getFile(pane.dataset.file);
@@ -193,7 +249,7 @@ function showPicker(title, html, callback) {
 }
 function filePicker(title, callback, exclude = null, multiple = false) {
   const candidates = files.filter(file => file.id !== exclude);
-  showPicker(title, candidates.map(file => `<label class="picker-option"><input type="${multiple ? 'checkbox' : 'radio'}" name="file" value="${esc(file.id)}" ${multiple && state.contexts.has(file.id) ? 'checked' : ''}><span>${esc(file.name)}<small> · ${esc(file.course)}</small></span></label>`).join(''), () => {const ids = $$('#picker-body input:checked').map(input => input.value); if (!ids.length) {toast('请选择文件'); return;} callback(multiple ? ids : ids[0]);});
+  showPicker(title, candidates.map(file => `<label class="picker-option"><input type="${multiple ? 'checkbox' : 'radio'}" name="file" value="${esc(file.id)}" ${multiple && state.contexts.has(file.id) ? 'checked' : ''}><span>${esc(file.name)}<small> · ${esc(file.course || '未归属')}</small></span></label>`).join(''), () => {const ids = $$('#picker-body input:checked').map(input => input.value); if (!ids.length) {toast('请选择文件'); return;} callback(multiple ? ids : ids[0]);});
 }
 $('#picker').addEventListener('close', () => {if ($('#picker').returnValue === 'confirm' && pickerCallback) pickerCallback(); pickerCallback = null;});
 function createFolder() {
@@ -201,7 +257,7 @@ function createFolder() {
 }
 function moveFiles() {
   if (!state.selected.size) return;
-  showPicker('把文件放到哪里？', '<p class="picker-note">只改变本页的文件位置，保留文件身份与关联。</p>' + [{id:'', name:'桌面'}, ...folders].map(folder => `<label class="picker-option"><input type="radio" name="folder" value="${esc(folder.id)}"><span>${esc(folder.name)}</span></label>`).join(''), () => {const choice = $('#picker-body input:checked'); if (!choice) {toast('请选择位置'); return;} for (const id of state.selected) getFile(id).folder = choice.value || null; renderDesktop(); toast('已移动文件，可再次选择后移回');});
+  showPicker('把文件放到哪里？', '<p class="picker-note">移动后仍保留文件身份与关联。</p>' + [{id:'', name:'桌面'}, ...folders].map(folder => `<label class="picker-option"><input type="radio" name="folder" value="${esc(folder.id)}"><span>${esc(folder.name)}</span></label>`).join(''), () => {const choice = $('#picker-body input:checked'); if (!choice) {toast('请选择位置'); return;} for (const id of state.selected) getFile(id).folder = choice.value || null; renderDesktop(); toast('已移动文件，可再次选择后移回');});
 }
 function refsText() {
   const names = [...state.contexts].map(id => getFile(id)?.name).filter(Boolean);
@@ -209,43 +265,29 @@ function refsText() {
   return names.join(' · ');
 }
 function quickAction(action) {
-  if (action === 'question') {collapseAssistant(false); $('#prompt').focus(); $('#prompt').placeholder = '关于这份内容，你想问什么？'; return;}
-  if (!state.contexts.size) {toast('先选择或关联一份文件'); $('#attach-context').focus(); return;}
-  const names = [...state.contexts].map(id => getFile(id).name);
-  if (action === 'organize') {
-    const ids = [...state.contexts];
-    showPicker('整理这些文件', `<p class="picker-note">预览将把 ${ids.length} 份关联文件放入你命名的文件夹，不猜测课程或内容类型。</p><label><span class="sr-only">文件夹名称</span><input class="picker-input" id="organize-name" placeholder="例如：这次要看的材料" maxlength="60" required></label>`, () => {
-      const name = $('#organize-name').value.trim(); if (!name) return;
-      const folderId = `folder-${state.nextId++}`; folders.push({id:folderId, name});
-      for (const id of ids) getFile(id).folder = folderId;
-      addMessage('user', `把这些文件整理到“${name}”。`, {refs:names.join(' · ')});
-      addMessage('assistant', `已在本页把 ${ids.length} 份文件移入“${name}”。文件内容和课程归属保持原样。可以从桌面选择文件，再移动到其他位置。`);
-      renderDesktop(); toast('整理完成 · 仅本次预览');
-    });
-  } else if (action === 'practice') {
-    if (getFile('practice').text === undefined) {toast('示例文件尚未读取成功'); return;}
-    addMessage('user', '组织一份练习。', {refs:refsText()});
-    const id = `generated-${state.nextId++}`;
-    files.push({id, name:'示例练习 ' + (files.filter(f => f.id.startsWith('generated-')).length + 1) + '.txt', course:'微积分', folder:'practice-folder', kind:'practice', label:'固定示例', mime:'text/plain', text:getFile('practice').text, sources:[...state.contexts]});
-    renderDesktop();
-    addMessage('assistant', '示例练习已放到桌面。内容为固定示例，并非根据关联文件生成。', {file:id});
-    toast('示例练习已放回桌面');
-  }
+  collapseAssistant(false);
+  if (!state.contexts.size && action !== 'question') {toast('先选择或关联文件');return;}
+  $('#prompt').value=action==='organize'?'请读取这些文件，并按内容整理到合适的文件夹。':action==='practice'?'请根据这些材料组织练习，保存题目，并加入任务清单。':$('#prompt').value;
+  $('#prompt').focus();
 }
-function sendMessage() {
-  const input = $('#prompt'); const text = input.value.trim(); if (!text) return;
-  addMessage('user', text, {refs:refsText()}); input.value = '';
-  addMessage('assistant', '已记录你的问题与关联内容。此处是示例对话，实际回答将在模型接入后提供。');
-  state.quote = null; renderContexts(); $('#quote-bar').hidden = true;
+async function sendMessage() {
+  const input=$('#prompt'),text=input.value.trim();if(!text || sending)return;
+  sending=true;
+  const key=channel(),args={id:requestId(),channel:key,text,files:[...state.contexts],quote:state.quote};
+  try {
+    await api('/api/chat',args);
+    if(channel()===key){input.value='';state.quote=null;renderContexts();persistDraft();}
+    await refresh();
+  } catch(error){toast(error.message);await refresh();}finally{sending=false;}
 }
 $('#chat-form').addEventListener('submit', event => {event.preventDefault(); sendMessage();});
 $('#prompt').addEventListener('keydown', event => {if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {event.preventDefault(); sendMessage();}});
 $('#home').addEventListener('click', event => {event.preventDefault(); backToDesktop();});
 $('#back').addEventListener('click', backToDesktop);
-$('#tasks').addEventListener('change',event=>{const input=event.target.closest('[data-task]');if(input){tasks.find(task=>task.id===input.dataset.task).done=input.checked;renderTasks();}});
-$('#tasks').addEventListener('click',event=>{const button=event.target.closest('[data-task-open]');if(button)openFile(button.dataset.taskOpen);});
+$('#tasks').addEventListener('change',async event=>{const input=event.target.closest('[data-task]');if(!input)return;try{await operation('check_task',{task:input.dataset.task,done:input.checked});await refresh();}catch(error){toast(error.message);await refresh(true);}});
+$('#tasks').addEventListener('click',event=>{const button=event.target.closest('[data-task-open]');if(button?.dataset.taskOpen)openFile(button.dataset.taskOpen);else if(button){collapseAssistant(false);$('#prompt').value='关于任务“'+tasks.find(t=>t.id===button.dataset.taskId).title+'”，';$('#prompt').focus();}});
 $('#reader-modes').addEventListener('click',event=>{const button=event.target.closest('[data-mode]');if(button){saveScroll();getFile(state.active).mode=button.dataset.mode;renderTask();}});
-$('.workspace').addEventListener('scroll',()=>{$('#quote-bar').hidden=true;},{passive:true});
+$('.workspace').addEventListener('scroll',()=>{$('#quote-bar').hidden=true;clearTimeout(draftTimer);draftTimer=setTimeout(persistDraft,500);},{passive:true});
 $('#folders').addEventListener('click', event => {const button = event.target.closest('[data-folder]'); if (!button) return; state.folder = state.folder === button.dataset.folder ? null : button.dataset.folder; renderDesktop();});
 $('#clear-folder').addEventListener('click', () => {state.folder = null; renderDesktop();});
 $('#new-folder').addEventListener('click', createFolder);
@@ -271,12 +313,12 @@ $('#document-tabs').addEventListener('click', event => {const close = event.targ
 $('#compare').addEventListener('click', () => filePicker('选择并排查看的文件', id => {saveScroll(); state.compare = id; renderTask();}, state.active));
 $('#rename').addEventListener('click', () => {const file = getFile(state.active); showPicker('重命名文件', `<label><span class="sr-only">文件名称</span><input class="picker-input" id="rename-input" value="${esc(file.name)}" maxlength="120" required></label>`, () => {const name = $('#rename-input').value.trim(); if (!name) return; saveScroll(); file.name = name; renderDesktop(); renderTask(); renderContexts(); renderConversation(); toast('名称已更新，文件关联保留');});});
 $('#document-area').addEventListener('scroll', () => {$('#quote-bar').hidden=true;},true);
-$('#document-area').addEventListener('click', event => {
+$('#document-area').addEventListener('click', async event => {
   if(event.target.closest('.pdf-toolbar')) {$('#quote-bar').hidden=true;state.pendingQuote=null;}
   if (event.target.closest('#close-compare')) {saveScroll(); state.compare = null; renderTask();}
   const pane = event.target.closest('.document-pane'); if (!pane) return;
-  if (event.target.closest('.save-answer')) {const answer = $('.answer-input', pane).value.trim(); if (!answer) {toast('先写下你的作答'); return;} state.answers.set(pane.dataset.file, answer); $('.answer-status', pane).textContent = '已保存到本次预览'; toast('作答已保留 · 刷新后重置');}
-  if (event.target.closest('.ask-answer')) {const answer = $('.answer-input', pane).value.trim(); if (!answer) {toast('先写下你的作答'); return;} state.answers.set(pane.dataset.file, answer); state.contexts.add(pane.dataset.file); state.quote = {file:pane.dataset.file, text:answer, source:'作答'}; renderContexts(); collapseAssistant(false); $('#prompt').value = '请检查这份作答的推导。'; $('#prompt').focus();}
+  if (event.target.closest('.save-answer')) {const answer = $('.answer-input', pane).value.trim(); if (!answer) {toast('先写下你的作答'); return;} state.answers.set(pane.dataset.file, answer); try {await operation('answer',{file:pane.dataset.file,text:answer});$('.answer-status',pane).textContent='已保存';toast('原始作答已保存');}catch(error){toast(error.message);}}
+  if (event.target.closest('.ask-answer')) {const answer = $('.answer-input', pane).value.trim(); if (!answer) {toast('先写下你的作答'); return;} state.answers.set(pane.dataset.file, answer); state.contexts.add(pane.dataset.file); await operation('answer',{file:pane.dataset.file,text:answer}); state.quote = {file:pane.dataset.file, text:answer, source:'作答',sha256:getFile(pane.dataset.file).sha256}; renderContexts(); collapseAssistant(false); $('#prompt').value = '请检查这份作答的推导。'; $('#prompt').focus();}
 });
 $('#document-area').addEventListener('input', event => {if (event.target.matches('.answer-input')) state.answers.set(event.target.closest('.document-pane').dataset.file, event.target.value);});
 function captureSelection() {
@@ -286,7 +328,7 @@ function captureSelection() {
   const pane = node?.closest('.document-pane');
   if (!pane || end?.closest('.document-pane') !== pane) return;
   const text = selection.toString().trim().slice(0,2000); if (!text) return;
-  state.pendingQuote = {file:pane.dataset.file, text, source:node.closest('[data-page-number]') ? `第 ${node.closest('[data-page-number]').dataset.pageNumber} 页选区` : '文字选区'};
+  state.pendingQuote = {file:pane.dataset.file, text, sha256:getFile(pane.dataset.file).sha256, source:node.closest('[data-page-number]') ? `第 ${node.closest('[data-page-number]').dataset.pageNumber} 页选区` : '文字选区'};
   $('#quote-preview').textContent = `“${text}”`;
   const rect = selection.getRangeAt(0).getBoundingClientRect();
   const workspace = $('.workspace').getBoundingClientRect();
@@ -300,15 +342,14 @@ $('#document-area').addEventListener('touchend', () => setTimeout(captureSelecti
 $('#ask-selection').addEventListener('click', () => {if (!state.pendingQuote) return; state.quote = state.pendingQuote; state.contexts.add(state.quote.file); renderContexts(); collapseAssistant(false); $('#prompt').focus(); $('#prompt').placeholder = '关于这段内容，你想问什么？'; $('#quote-bar').hidden = true;});
 $('#add-files').addEventListener('click', () => $('#file-input').click());
 async function importFiles(incoming) {
-  let added = 0;
   for (const raw of incoming) {
-    if (raw.size > 5 * 1024 * 1024) {toast(`${raw.name} 超过预览的 5 MB 上限`); continue;}
-    const file = {id:`upload-${state.nextId++}`, name:raw.name, course:'未归属', folder:state.folder === 'unfiled' ? null : state.folder, kind:'upload', label:'本页文件 · 待判断', mime:raw.type || '', url:URL.createObjectURL(raw)};
-    // MIME only chooses the browser preview; it never assigns a learning content type.
-    if (raw.type.startsWith('text/') || ['markdown','latex'].includes(formatFor(file))) file.text = await raw.text();
-    files.unshift(file); added++;
+    if(raw.size>20*1024*1024){toast(`${raw.name} 超过 20 MB`);continue;}
+    try {
+      const data=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result.split(',')[1]);reader.onerror=reject;reader.readAsDataURL(raw);});
+      await operation('create',{name:raw.name,mime:raw.type,data,folder:state.folder==='unfiled'?null:state.folder});
+    }catch(error){toast(error.message);}
   }
-  renderDesktop(); if (added) toast(`已添加 ${added} 份文件到本页，没有上传到服务器`);
+  await refresh(true);toast('文件已保存');
 }
 $('#file-input').addEventListener('change', async event => {await importFiles(event.target.files); event.target.value = '';});
 $('.workspace').addEventListener('dragover', event => {if (event.dataTransfer.types.includes('Files')) event.preventDefault();});
@@ -320,5 +361,32 @@ divider.addEventListener('pointerdown', event => {divider.setPointerCapture(even
 divider.addEventListener('pointermove', event => {if (divider.hasPointerCapture(event.pointerId)) setAssistantWidth(window.innerWidth - event.clientX);});
 divider.addEventListener('keydown', event => {if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {event.preventDefault(); setAssistantWidth($('.assistant').getBoundingClientRect().width + (event.key === 'ArrowLeft' ? 20 : -20));}});
 renderDesktop(); renderContexts(); renderConversation(); renderTabs();
-Promise.all(files.map(loadFile)).then(() => {if (state.active) renderTask();});
+refresh(true).then(()=>{$('.prototype-note').textContent='文件与对话自动保存';}).catch(error=>{toast('无法连接云端服务：'+error.message);$('.prototype-note').textContent='尚未连接服务';});
+setInterval(()=>refresh().catch(()=>{$('.preview-label').textContent='连接中断';}),2000);
 if (matchMedia('(max-width:720px)').matches) collapseAssistant(true);
+
+let draftTimer;
+$('#prompt').addEventListener('input',()=>{clearTimeout(draftTimer);draftTimer=setTimeout(persistDraft,400);});
+$('#stop-agent').addEventListener('click',async()=>{try{await api('/api/stop',{});await refresh();}catch(error){toast(error.message);}});
+$('#new-task').addEventListener('click',()=>showPicker('新建任务','<input id="task-title" class="picker-input" placeholder="要做什么？" required>',async()=>{try{await operation('task',{title:$('#task-title').value});await refresh();}catch(error){toast(error.message);}}));
+$('#compile-file').addEventListener('click',async()=>{
+  const file=getFile(state.active),button=$('#compile-file');button.disabled=true;button.textContent='编译中…';
+  try{const result=await operation('compile',{file:file.id,expected:file.sha256});await refresh(true);if(result.ok){getFile(file.id).mode='pdf';renderTask();toast('PDF 已生成，等待内容与版式核验');}else{toast('编译失败，已保留上一版 PDF');}}
+  catch(error){toast(error.message);}finally{button.disabled=false;button.textContent='编译 PDF';}
+});
+$('#view-pdf').addEventListener('click',()=>{const file=getFile(state.active);file.mode=file.mode==='pdf'?'source':'pdf';renderTask();});
+$('#edit-file').addEventListener('click',()=>{
+  const file=getFile(state.active),expected=file.sha256;
+  showPicker('编辑源码','<textarea id="edit-text" class="source-editor" aria-label="文件源码"></textarea>',async()=>{
+    try{await operation('write',{file:file.id,expected,text:$('#edit-text').value});await refresh(true);toast('已保存新版本');if(formatFor(file)==='latex')$('#compile-file').click();}catch(error){toast(error.message);}
+  });$('#edit-text').value=file.text;
+});
+$('#history-file').addEventListener('click',async()=>{
+  const file=getFile(state.active);
+  try{const {versions}=await operation('history',{file:file.id});const distinct=[...new Map(versions.map(v=>[v.sha256,v])).values()].reverse();showPicker('恢复文件版本',distinct.map((v,i)=>`<label class="picker-option"><input type="radio" name="version" value="${esc(v.sha256)}"><span>${i===0?'当前版本':'历史版本 '+i}</span></label>`).join(''),async()=>{const version=$('#picker-body input:checked')?.value;if(!version)return;try{await operation('restore',{file:file.id,expected:file.sha256,version});await refresh(true);toast('已恢复，后续版本仍保留');}catch(error){toast(error.message);}});}catch(error){toast(error.message);}
+});
+
+window.addEventListener('pagehide',()=>{
+  const key=channel(),value={prompt:$('#prompt').value,contexts:[...state.contexts],quote:state.quote,scroll:$('.workspace').scrollTop};
+  navigator.sendBeacon('/api/workspace',new Blob([JSON.stringify({action:'draft',args:{channel:key,value}})],{type:'application/json'}));
+});

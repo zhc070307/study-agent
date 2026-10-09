@@ -5,6 +5,8 @@ description: Operate the selected semester in the Codex-centred learning system.
 
 # Study system
 
+在融合 harness 中，当前助理负责全部学习操作，不依赖本机 Codex/pi 分工。命令入口使用 `study_read` 返回的绝对 service 路径和独立数据目录；桌面文件先读取实际内容，再按明确课程与位置 `study_desktop publish`，供原材料扫描与回执复用。桌面任务与此处使用同一账本，勾选仅记录学生确认完成，不证明掌握。Calendar 在当前环境不可用时说明未知，不阻断其他学习操作，也不要求用户在本机部署。
+
 Work as the learning agent, not as an autonomous scheduler. The program stores
 facts and renders views; learning judgments come from the current materials,
 the relevant `COURSE.md`, the student's feedback, and discussion when needed.
