@@ -21,11 +21,11 @@
 
 ## 仓库边界
 
-统一入口为根目录 `study-agent`。`packages/agent/` 是我们的应用核心，`packages/learning/` 是学习领域包，`ui/` 是界面，`scripts/` 是维护脚本，`verification/` 是集成验证，`vendor/deepseek-harness/` 是第三方依赖。不要再建立平行的 harness 或 Study System 应用副本。学习包已展平为 src/tests/skills/tools，入口、路径、许可和 CI 在移动代码时同步维护。数据布局保持兼容，源码整理不自动迁移个人数据。
+统一入口为根目录 `study-agent`。`packages/agent/` 是我们的应用核心，`packages/learning/` 是学习领域包，`ui/` 是界面，`scripts/` 是维护脚本，`verification/` 是集成验证，`packages/runtime/` 是有取舍地纳入并由本项目维护的运行核心。不要再建立平行的 harness 或 Study System 应用副本。学习包已展平为 src/tests/skills/tools，入口、路径、许可和 CI 在移动代码时同步维护。数据布局保持兼容，源码整理不自动迁移个人数据。
 
 ## 实现与数据
 
-复用固定版本 `vendor/deepseek-harness` 的模型循环、会话、工具与附件；复用 `packages/learning/` 的领域账本和证据检查。优先采用已有更可靠的实现，不建立第二套循环或重复账本。上游版本变化需显式复核，勿随意修改 vendored 源码。
+使用 `packages/runtime/` 中纳入的模型循环、会话、工具与附件实现；复用 `packages/learning/` 的领域账本和证据检查。优先采用已有更可靠的实现，不建立第二套循环或重复账本。采用的组件与原始版本记录在 runtime/SOURCE.json，许可证保留在 runtime/LICENSE、foundation 和 native 目录；改造时保留来源与版权。只引入实际需要的能力，不重新放入完整上游仓库、子模块或第二套启动入口。上游修复按需审查和吸收，由本项目维护自己的依赖锁文件与测试。
 
 操作身份、文件身份、版本冲突、真实证据和恢复必须由程序检查，不能只靠提示。任务确认完成不代表知识掌握，交付不代表学生已经作答。保留原始作答、反馈和旧版本，失败不要报告已完成。
 

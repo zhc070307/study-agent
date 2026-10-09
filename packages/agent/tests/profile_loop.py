@@ -12,7 +12,7 @@ import time
 
 project = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(project / 'packages/agent'))
-from run import patch
+from run import patch, runtime_command
 
 with tempfile.TemporaryDirectory(prefix='study-profile-loop-') as directory:
     root = Path(directory)
@@ -20,8 +20,8 @@ with tempfile.TemporaryDirectory(prefix='study-profile-loop-') as directory:
     overlay.write_text(json.dumps(patch(root) + [{'insert': [{'id': 'study-test-model',
         'name': str(project / 'packages/agent/tests/mock-model.ts')}]}]))
     with tempfile.TemporaryFile(mode='w+') as diagnostics:
-        process = subprocess.Popen(['pnpm', 'dsh', '--profile', 'sdk-minimal', '--patch', str(overlay)],
-            cwd=project / 'vendor/deepseek-harness', env=dict(os.environ, DSH_HOME=str(root / '.harness')),
+        process = subprocess.Popen(runtime_command('--patch',str(overlay)),
+            cwd=project, env=dict(os.environ, DSH_HOME=str(root / '.harness')),
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=diagnostics, start_new_session=True)
         selector = selectors.DefaultSelector()
         selector.register(process.stdout, selectors.EVENT_READ)
@@ -66,7 +66,9 @@ with tempfile.TemporaryDirectory(prefix='study-profile-loop-') as directory:
             conn.close()
             assert '学习流程已经开始' in json.dumps(frames, ensure_ascii=False)
             send(3, 'shutdown')
-            assert until(lambda frame: frame.get('id') == 3)['result'] == {}
+            reply=until(lambda frame: frame.get('id') == 3)
+            diagnostics.seek(0)
+            assert reply.get('result') == {},(reply,diagnostics.read())
             process.wait(timeout=15)
             assert process.returncode == 0
             print('Actual trimmed SDK profile executed Study tools and persisted progress with scripted model')

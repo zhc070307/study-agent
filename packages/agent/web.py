@@ -14,7 +14,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit, unquote
 
 from workspace import Workspace, encoded, PROJECT, MAX_FILE
-from run import patch, UPSTREAM, REVISION
+from run import patch, runtime_command
 from semesters import Semesters
 from urllib.parse import parse_qs
 from functools import wraps
@@ -84,13 +84,11 @@ class Runtime:
 
     def _start(self):
         if self.process and self.process.poll() is None: return
-        revision = subprocess.check_output(['git','rev-parse','HEAD'],cwd=UPSTREAM,text=True).strip()
-        if revision!=REVISION: raise RuntimeError('Harness 版本需要重新核对')
         self.temp = tempfile.TemporaryDirectory(prefix='study-web-')
         overlay = Path(self.temp.name)/'patch.json'
         overlay.write_text(encoded(patch(self.root)+self.extra_patch))
         self.diagnostics = tempfile.TemporaryFile(mode='w+')
-        self.process = subprocess.Popen(['pnpm','dsh','--profile','sdk-minimal','--patch',str(overlay)],cwd=UPSTREAM,env=dict(os.environ,DSH_HOME=str(self.root/'.harness')),stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=self.diagnostics,text=True,bufsize=1,start_new_session=True)
+        self.process = subprocess.Popen(runtime_command('--patch',str(overlay)),cwd=PROJECT,env=dict(os.environ,DSH_HOME=str(self.root/'.harness')),stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=self.diagnostics,text=True,bufsize=1,start_new_session=True)
         threading.Thread(target=self.read,args=(self.process,),daemon=True).start()
         try:
             self.request('initialize',{'cwd':str(self.root),'provider':self.provider,'model':self.model})

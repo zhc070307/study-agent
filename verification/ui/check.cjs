@@ -6,7 +6,7 @@ const path=require('node:path');
 const os=require('node:os');
 const {spawn}=require('node:child_process');
 const root=path.resolve(__dirname,'../..');
-const packages=path.join(root,'vendor/deepseek-harness/node_modules/.pnpm');
+const packages=path.join(root,'node_modules/.pnpm');
 const packageName=fs.readdirSync(packages).find(name=>/^playwright@\d/.test(name));
 const {chromium}=require(process.env.STUDY_UI_PLAYWRIGHT_MODULE || path.join(packages,packageName,'node_modules/playwright'));
 (async()=>{

@@ -10,8 +10,6 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: true
       - uses: actions/setup-node@v4
         with:
           node-version: 24.19.0
@@ -22,7 +20,6 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y latexmk texlive-xetex texlive-lang-chinese poppler-utils
       - run: ./study-agent setup
       - name: Browser dependencies
-        working-directory: vendor/deepseek-harness
         run: pnpm exec playwright install --with-deps chromium
       - run: ./study-agent check
       - run: node verification/ui/check.cjs

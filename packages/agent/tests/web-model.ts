@@ -1,6 +1,6 @@
 // Deterministic test adapter only. No remote inference; exercises the real SDK/tools.
-import type { Context } from '../../../vendor/deepseek-harness/vendor/cordis/src/index.ts'
-import { MockAdapter, textResponse, toolCallResponse } from '../../../vendor/deepseek-harness/packages/core/agent-loop/tests/mock-adapter.ts'
+import type { Context } from '../../runtime/foundation/cordis/src/index.ts'
+import { MockAdapter, textResponse, toolCallResponse } from '../../runtime/modules/core/agent-loop/tests/mock-adapter.ts'
 export const name = 'study-web-test-model'
 export const inject = ['llm']
 export function apply(ctx: Context) {

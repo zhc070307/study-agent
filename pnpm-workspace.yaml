@@ -1,0 +1,11 @@
+packages:
+  - packages/agent
+  - packages/runtime
+  - packages/runtime/modules/*/*
+  - packages/runtime/foundation/*
+  - packages/runtime/native/system/packages/*
+
+allowBuilds:
+  esbuild: true
+  koffi: true
+  node-addon-require-builtin: false

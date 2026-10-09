@@ -2,7 +2,7 @@
 
 一个由**桌面**和**助理**组成的学习软件。桌面放文件、显示任务；助理根据你的要求整理材料、组织练习、回答问题。打开文件后，可以一边阅读、一边划词提问。
 
-当前已接通真实文件存储、学习服务和 DeepSeek Harness，并在隔离数据上验证。**还不是已经公开上线的产品**：云端托管、登录与访问控制、运行凭据和备份运维仍需落实。本项目目前只在云端开发并更新 GitHub，不安排本机部署，也不再次测试真实 DeepSeek 推理。
+当前已接通真实文件存储和学习服务，并将选取的 DeepSeek Harness 运行实现纳入本项目，在隔离数据上完成验证。**还不是已经公开上线的产品**：云端托管、登录与访问控制、运行凭据和备份运维仍需落实。本项目目前只在云端开发并更新 GitHub，不安排本机部署，也不再次测试真实 DeepSeek 推理。
 
 ## 使用方式
 
@@ -43,21 +43,21 @@ study-agent              唯一启动入口
 packages/
   agent/                 助理工具、流程、整体记忆、文件存储与 Web 服务
   learning/              学习领域服务：任务、材料、批改、复测、交付与质量标准
+  runtime/               选取并纳入本项目维护的模型循环、工具、会话与附件
 ui/                      桌面、文件阅览与对话界面
 scripts/                 依赖准备和统一检查
-verification/            浏览器及上游接入验证
-vendor/deepseek-harness/  固定版本第三方运行引擎
+verification/            浏览器与运行核心融合验证
 ```
 
-`packages/agent/` 把用户要求交给模型，并调用 `packages/learning/` 保存与核对学习事实；第三方引擎负责模型循环和会话。学习包的源码直接位于 `src/study_agent/`，没有旧应用里再嵌套一层应用的目录。`skills/`、工具和领域检查留在学习包内，靠近所规范的业务。个人资料位于运行时指定的独立目录，不混在源码中。
+`packages/agent/` 把用户要求交给模型，并调用 `packages/learning/` 保存与核对学习事实；`packages/runtime/` 中纳入的引擎负责模型循环和会话。学习包的源码直接位于 `src/study_agent/`，没有旧应用里再嵌套一层应用的目录。`skills/`、工具和领域检查留在学习包内，靠近所规范的业务。个人资料位于运行时指定的独立目录，不混在源码中。
 
 结构参考了 [Codex 的组件划分](https://github.com/openai/codex/blob/main/codex-rs/Cargo.toml)、[OpenCode 的 packages 组织](https://github.com/anomalyco/opencode/blob/dev/package.json)和 [DeepSeek Harness 的应用与核心分层](https://github.com/deepseek-ai/deepseek-harness/blob/master/pnpm-workspace.yaml)。只采用职责清楚的划分，不引入它们的大型仓库规模。
 
 ## 实现与数据
 
-固定采用 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的 [`5badb15009ae1756c3afe0ae0cef1faafc290ccc`](https://github.com/deepseek-ai/deepseek-harness/tree/5badb15009ae1756c3afe0ae0cef1faafc290ccc)（`0.2.1-alpha.1`）。复用它的模型循环、会话、工具和附件能力；`packages/learning/` 中已有的任务、材料、批改、复测、计划和交付服务提供学习账本。没有另写一套模型循环。
+有取舍地采用 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的 [`5badb15009ae1756c3afe0ae0cef1faafc290ccc`](https://github.com/deepseek-ai/deepseek-harness/tree/5badb15009ae1756c3afe0ae0cef1faafc290ccc)（`0.2.1-alpha.1`）的模型循环、会话、工具和附件实现，已作为普通源码纳入 `packages/runtime/`，由本项目维护。没有 Git 子模块或运行时获取原仓库的步骤。保留 92 个必要组件及定向测试支持组件，未采用其余应用和工具；`packages/learning/` 中已有的任务、材料、批改、复测、计划和交付服务提供学习账本。没有另写一套模型循环。
 
-模型可以读取、执行和修改实际流程；修改经过验证才生效，保留旧版本和在途证据。通用流程与当学期、课程例外分开；流程规范模型检查材料、保存依据和核验结果，不规范用户必须怎样学习。生成代码属于可信单用户扩展，不是任意代码的安全隔离环境。
+模型可以读取、执行和修改实际流程；修改经过验证才生效，保留旧版本和在途证据。通用流程与当学期、课程例外分开；流程规范模型检查材料、保存依据和核验结果，不规范用户必须怎样学习。生成代码属于可信单用户扩展，不是任意代码的安全隔离环境。纳入代码采用 MIT/BSD-3-Clause，并保留原声明；安装依赖的许可与打包义务见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
 维护者指定的 `--data` 是整个学习空间：
 
@@ -91,7 +91,7 @@ node verification/ui/check.cjs
 
 检查使用临时学习空间和脚本化模型响应，覆盖实际 SDK 工具调用、持久状态、流程修改、中文 PDF 编译与页面读取，以及浏览器上传、划词、作答、停止和重启。生命周期检查覆盖课程建立、整体记忆保留、课程信息隔离、通用流程与本学期例外、归档、移除恢复、备份以及切换期间的旧请求拒绝。它们不证明真实模型的教学质量或视觉判断能力，也不发送真实 DeepSeek 推理请求。
 
-上游完整 monorepo 构建尚未验收；依赖准备排除本项目未使用、当前网络无法获取的 SheetJS 文档预览包，保留上游锁文件。项目 PDF 阅览采用同版本 PDF.js 及官方文字层。macOS Calendar 属可选能力，Linux 如实报告不可用。
+安装和启动使用本项目自己的 workspace、锁文件和运行入口，不需要原仓库或其完整构建。原桌面界面、SheetJS 文档预览、账户平台和 Office 工具不在我们的运行依赖中。项目 PDF 阅览采用同版本 PDF.js 及官方文字层。macOS Calendar 属可选能力，Linux 如实报告不可用。
 
 ## 距离第一版发布
 
@@ -113,4 +113,4 @@ node verification/ui/check.cjs
 | 学期中改变想法的用户 | 整体习惯不再困在学期数据里；课程与临时要求不自动升级成通用记忆。记忆作为参考提供，当前意愿优先；通用流程保留课程和当学期例外。 |
 | 结束与换学期的用户 | 学期数据隔离，旧请求不能写新学期；归档不伪造完成。移除可恢复、整体记忆保留，重复移除不会破坏恢复状态；编译不阻塞状态查看和停止，课程文件同步进行并发检查。 |
 
-当前隔离检查：原领域 208 项（207 通过、1 跳过），项目流程与生命周期 45 项通过，上游定向及融合循环 221 项通过；浏览器检查另覆盖真实上传、SDK 操作、PDF、作答、记忆保存和学期交接。真实模型的沟通与判断仍不能靠这些检查保证。
+当前隔离检查：原领域 208 项（207 通过、1 跳过），项目流程与生命周期 45 项通过，纳入的运行核心及融合循环 221 项通过；浏览器检查另覆盖真实上传、SDK 操作、PDF、作答、记忆保存和学期交接。真实模型的沟通与判断仍不能靠这些检查保证。

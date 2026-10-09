@@ -1,0 +1,45 @@
+{
+  "name": "study-agent",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.19.0",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "runtime": "node --import tsx/esm packages/runtime/launcher/main.ts",
+    "check:runtime": "vitest run",
+    "check:ui": "node verification/ui/check.cjs"
+  },
+  "devDependencies": {
+    "typescript": "6.0.3",
+    "tsx": "4.22.4",
+    "vitest": "4.1.8",
+    "vite-tsconfig-paths": "6.1.1",
+    "playwright": "1.58.2",
+    "esbuild": "0.28.1"
+  },
+  "dependencies": {
+    "@standard-schema/spec": "1.1.0",
+    "js-yaml": "4.3.1",
+    "node-addon-require-builtin": "0.1.6",
+    "zod": "4.4.3",
+    "@eslint-community/regexpp": "4.12.2",
+    "ajv": "8.20.0",
+    "resolve.exports": "2.0.3",
+    "semver": "7.8.5",
+    "sharp": "0.35.3",
+    "yaml": "2.9.0",
+    "@babel/code-frame": "7.29.7",
+    "chokidar": "4.0.3",
+    "picomatch": "4.0.4",
+    "undici": "8.10.0",
+    "eventsource-parser": "3.1.0",
+    "execa": "10.0.0",
+    "koffi": "3.1.1",
+    "commander": "15.0.0",
+    "node-pty": "1.2.0-beta.15",
+    "@xterm/headless": "6.0.0",
+    "diff": "9.0.0"
+  }
+}

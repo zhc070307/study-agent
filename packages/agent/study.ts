@@ -1,14 +1,14 @@
-import type { Context } from '../../vendor/deepseek-harness/vendor/cordis/src/index.ts'
-import { createUserMessage } from '../../vendor/deepseek-harness/packages/llm/llm/src/index.ts'
-import type { ContextFormed } from '../../vendor/deepseek-harness/packages/llm/llm/src/index.ts'
-import { defineTool } from '../../vendor/deepseek-harness/packages/core/tools/src/index.ts'
-import { assertImageCapableRoute } from '../../vendor/deepseek-harness/packages/fs/tool-fs/src/read-image.ts'
-import { admitEncodedImages } from '../../vendor/deepseek-harness/packages/attachment/attachment/src/index.ts'
+import type { Context } from '../runtime/foundation/cordis/src/index.ts'
+import { createUserMessage } from '../runtime/modules/llm/llm/src/index.ts'
+import type { ContextFormed } from '../runtime/modules/llm/llm/src/index.ts'
+import { defineTool } from '../runtime/modules/core/tools/src/index.ts'
+import { assertImageCapableRoute } from '../runtime/modules/fs/tool-fs/src/read-image.ts'
+import { admitEncodedImages } from '../runtime/modules/attachment/attachment/src/index.ts'
 import { execFile } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { readFileSync } from 'node:fs'
 
-declare module '../../vendor/deepseek-harness/packages/llm/llm/src/index.ts' {
+declare module '../runtime/modules/llm/llm/src/index.ts' {
   interface MessageSourceMap { 'study': { kind: 'study' } & ContextFormed }
 }
 

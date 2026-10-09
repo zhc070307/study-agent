@@ -1,0 +1,466 @@
+{
+  "repository": "https://github.com/deepseek-ai/deepseek-harness",
+  "commit": "5badb15009ae1756c3afe0ae0cef1faafc290ccc",
+  "components": {
+    "@deepseek-ai/cordis": {
+      "path": "foundation/cordis",
+      "upstream": "vendor/cordis",
+      "license": "MIT"
+    },
+    "@deepseek-ai/cordis-plugin-group": {
+      "path": "foundation/group",
+      "upstream": "vendor/group",
+      "license": "MIT"
+    },
+    "@deepseek-ai/cordis-plugin-include": {
+      "path": "foundation/include",
+      "upstream": "vendor/include",
+      "license": "MIT"
+    },
+    "@deepseek-ai/cordis-plugin-loader": {
+      "path": "foundation/loader",
+      "upstream": "vendor/loader",
+      "license": "MIT"
+    },
+    "@deepseek-ai/cordis-plugin-timer": {
+      "path": "foundation/timer",
+      "upstream": "vendor/timer",
+      "license": "MIT"
+    },
+    "@deepseek-ai/cosmokit": {
+      "path": "foundation/cosmokit",
+      "upstream": "vendor/cosmokit",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-agent": {
+      "path": "modules/core/agent",
+      "upstream": "packages/core/agent",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-agent-loop": {
+      "path": "modules/core/agent-loop",
+      "upstream": "packages/core/agent-loop",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-agent-loop-testkit": {
+      "path": "modules/test-support/agent-loop-testkit",
+      "upstream": "packages/test-support/agent-loop-testkit",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-agent-preset-registry": {
+      "path": "modules/preset/agent-preset-registry",
+      "upstream": "packages/preset/agent-preset-registry",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-anonymous-user-id": {
+      "path": "modules/identity/anonymous-user-id",
+      "upstream": "packages/identity/anonymous-user-id",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-app-boot": {
+      "path": "modules/boot/app-boot",
+      "upstream": "packages/boot/app-boot",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-atomic-write": {
+      "path": "modules/util/atomic-write",
+      "upstream": "packages/util/atomic-write",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-attachment": {
+      "path": "modules/attachment/attachment",
+      "upstream": "packages/attachment/attachment",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-attachment-local": {
+      "path": "modules/attachment/attachment-local",
+      "upstream": "packages/attachment/attachment-local",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-brand": {
+      "path": "modules/util/brand",
+      "upstream": "packages/util/brand",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-chunked-list": {
+      "path": "modules/util/chunked-list",
+      "upstream": "packages/util/chunked-list",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-cmdline": {
+      "path": "modules/boot/cmdline",
+      "upstream": "packages/boot/cmdline",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-commands": {
+      "path": "modules/interaction/commands",
+      "upstream": "packages/interaction/commands",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-compaction": {
+      "path": "modules/compaction/compaction",
+      "upstream": "packages/compaction/compaction",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-compaction-image-offload": {
+      "path": "modules/compaction/compaction-image-offload",
+      "upstream": "packages/compaction/compaction-image-offload",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-config-editor": {
+      "path": "modules/boot/config-editor",
+      "upstream": "packages/boot/config-editor",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-cordis-host-runner": {
+      "path": "modules/extensions/cordis-host-runner",
+      "upstream": "packages/extensions/cordis-host-runner",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-credentials": {
+      "path": "modules/credentials/credentials",
+      "upstream": "packages/credentials/credentials",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-deepseek-llm-api-extensions": {
+      "path": "modules/llm/deepseek-llm-api-extensions",
+      "upstream": "packages/llm/deepseek-llm-api-extensions",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-fs": {
+      "path": "modules/fs/fs",
+      "upstream": "packages/fs/fs",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-hmr": {
+      "path": "modules/boot/hmr",
+      "upstream": "packages/boot/hmr",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-home-paths": {
+      "path": "modules/util/home-paths",
+      "upstream": "packages/util/home-paths",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-host-plugin-inventory": {
+      "path": "modules/host/plugin-inventory",
+      "upstream": "packages/host/plugin-inventory",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-http-proxy": {
+      "path": "modules/util/http-proxy",
+      "upstream": "packages/util/http-proxy",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-jobs": {
+      "path": "modules/jobs/jobs",
+      "upstream": "packages/jobs/jobs",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-launch-environment": {
+      "path": "modules/util/launch-environment",
+      "upstream": "packages/util/launch-environment",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-lazy-require": {
+      "path": "modules/util/lazy-require",
+      "upstream": "packages/util/lazy-require",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-llm": {
+      "path": "modules/llm/llm",
+      "upstream": "packages/llm/llm",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-llm-deepseek": {
+      "path": "modules/llm/llm-deepseek",
+      "upstream": "packages/llm/llm-deepseek",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-llm-deepseek-api-key": {
+      "path": "modules/llm/llm-deepseek-api-key",
+      "upstream": "packages/llm/llm-deepseek-api-key",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-llm-retry": {
+      "path": "modules/llm/llm-retry",
+      "upstream": "packages/llm/llm-retry",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-output-retention": {
+      "path": "modules/util/output-retention",
+      "upstream": "packages/util/output-retention",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-package-manifest": {
+      "path": "modules/util/package-manifest",
+      "upstream": "packages/util/package-manifest",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-permission-presets": {
+      "path": "modules/interaction/permission-presets",
+      "upstream": "packages/interaction/permission-presets",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-plugin-manager": {
+      "path": "modules/boot/plugin-manager",
+      "upstream": "packages/boot/plugin-manager",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-ptc-runtime": {
+      "path": "modules/ptc-runtime/ptc-runtime",
+      "upstream": "packages/ptc-runtime/ptc-runtime",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-pwsh-local": {
+      "path": "modules/shell/pwsh-local",
+      "upstream": "packages/shell/pwsh-local",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-sandbox": {
+      "path": "modules/sandbox/sandbox",
+      "upstream": "packages/sandbox/sandbox",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-sandbox-local": {
+      "path": "modules/sandbox/sandbox-local",
+      "upstream": "packages/sandbox/sandbox-local",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-sandbox-policy": {
+      "path": "modules/sandbox/sandbox-policy",
+      "upstream": "packages/sandbox/sandbox-policy",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-sandbox-windows-acl": {
+      "path": "modules/sandbox/sandbox-windows-acl",
+      "upstream": "packages/sandbox/sandbox-windows-acl",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-scope": {
+      "path": "modules/core/scope",
+      "upstream": "packages/core/scope",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-sdk-app": {
+      "path": "modules/bundle/sdk-app",
+      "upstream": "packages/bundle/sdk-app",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-sdk-jsonrpc-server": {
+      "path": "modules/sdk/server",
+      "upstream": "packages/sdk/server",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-sdk-minimal": {
+      "path": "modules/bundle/sdk-minimal",
+      "upstream": "packages/bundle/sdk-minimal",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-sdk-protocol": {
+      "path": "modules/sdk/protocol",
+      "upstream": "packages/sdk/protocol",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-session": {
+      "path": "modules/core/session",
+      "upstream": "packages/core/session",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-session-format": {
+      "path": "modules/session/session-format",
+      "upstream": "packages/session/session-format",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-session-format-catalog": {
+      "path": "modules/session/session-format-catalog",
+      "upstream": "packages/session/session-format-catalog",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-session-format-v0-to-v1": {
+      "path": "modules/session/session-format-v0-to-v1",
+      "upstream": "packages/session/session-format-v0-to-v1",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-session-format-v1-to-v2": {
+      "path": "modules/session/session-format-v1-to-v2",
+      "upstream": "packages/session/session-format-v1-to-v2",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-session-format-v2-to-v3": {
+      "path": "modules/session/session-format-v2-to-v3",
+      "upstream": "packages/session/session-format-v2-to-v3",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-session-format-v3-to-v4": {
+      "path": "modules/session/session-format-v3-to-v4",
+      "upstream": "packages/session/session-format-v3-to-v4",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-session-log-deepseek": {
+      "path": "modules/session/session-log-deepseek",
+      "upstream": "packages/session/session-log-deepseek",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-session-persistence": {
+      "path": "modules/session/session-persistence",
+      "upstream": "packages/session/session-persistence",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-session-persistence-jsonl": {
+      "path": "modules/session/session-persistence-jsonl",
+      "upstream": "packages/session/session-persistence-jsonl",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-session-projection": {
+      "path": "modules/session/session-projection",
+      "upstream": "packages/session/session-projection",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-session-projection-cache": {
+      "path": "modules/session/session-projection-cache",
+      "upstream": "packages/session/session-projection-cache",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-session-query": {
+      "path": "modules/session-query/session-query",
+      "upstream": "packages/session-query/session-query",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-settings": {
+      "path": "modules/settings/settings",
+      "upstream": "packages/settings/settings",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-shell": {
+      "path": "modules/shell/shell",
+      "upstream": "packages/shell/shell",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-skill": {
+      "path": "modules/skill/skill",
+      "upstream": "packages/skill/skill",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-storage": {
+      "path": "modules/storage/storage",
+      "upstream": "packages/storage/storage",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-storage-domain": {
+      "path": "modules/storage/storage-domain",
+      "upstream": "packages/storage/storage-domain",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-subagent": {
+      "path": "modules/subagent/subagent",
+      "upstream": "packages/subagent/subagent",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-subprocess": {
+      "path": "modules/subprocess/subprocess",
+      "upstream": "packages/subprocess/subprocess",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-subprocess-local": {
+      "path": "modules/subprocess/subprocess-local",
+      "upstream": "packages/subprocess/subprocess-local",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-system-prompt": {
+      "path": "modules/core/system-prompt",
+      "upstream": "packages/core/system-prompt",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-terminal": {
+      "path": "modules/terminal/terminal",
+      "upstream": "packages/terminal/terminal",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-terminal-bash": {
+      "path": "modules/terminal/terminal-bash",
+      "upstream": "packages/terminal/terminal-bash",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-timeout": {
+      "path": "modules/util/timeout",
+      "upstream": "packages/util/timeout",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-tool-bash-persistent": {
+      "path": "modules/shell/tool-bash-persistent",
+      "upstream": "packages/shell/tool-bash-persistent",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-tool-fs": {
+      "path": "modules/fs/tool-fs",
+      "upstream": "packages/fs/tool-fs",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-tool-todo": {
+      "path": "modules/todo/tool-todo",
+      "upstream": "packages/todo/tool-todo",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-tools": {
+      "path": "modules/core/tools",
+      "upstream": "packages/core/tools",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-typert-protocol": {
+      "path": "modules/typert/protocol",
+      "upstream": "packages/typert/protocol",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-user-approval": {
+      "path": "modules/interaction/user-approval",
+      "upstream": "packages/interaction/user-approval",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-util-code-language": {
+      "path": "modules/util/code-language",
+      "upstream": "packages/util/code-language",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-util-crypto": {
+      "path": "modules/util/crypto",
+      "upstream": "packages/util/crypto",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-util-time": {
+      "path": "modules/util/time",
+      "upstream": "packages/util/time",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-util-values": {
+      "path": "modules/util/values",
+      "upstream": "packages/util/values",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-win32-process": {
+      "path": "modules/subprocess/win32-process",
+      "upstream": "packages/subprocess/win32-process",
+      "license": "MIT"
+    },
+    "@deepseek-ai/dsh-workspace": {
+      "path": "modules/workspace/workspace",
+      "upstream": "packages/workspace/workspace",
+      "license": "MIT"
+    },
+    "@deepseek-ai/node-addon-system": {
+      "path": "native/system/packages/entry",
+      "upstream": "native/system/packages/entry",
+      "license": "BSD-3-Clause"
+    },
+    "@deepseek-ai/node-addon-system-linux-x64": {
+      "path": "native/system/packages/linux-x64",
+      "upstream": "native/system/packages/linux-x64",
+      "license": "BSD-3-Clause"
+    },
+    "@deepseek-ai/schemastery": {
+      "path": "foundation/schemastery",
+      "upstream": "vendor/schemastery",
+      "license": "MIT"
+    }
+  }
+}
