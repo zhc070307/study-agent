@@ -100,8 +100,9 @@ jobs:
             native_python="$resources/python/bin/python3"
           fi
           "$native_python" -X utf8 verification/desktop/check.py --runtime "$resources/runtime"
-      - name: Install and open the Windows installer
+      - name: Install the Windows installer
         if: runner.os == 'Windows'
+        timeout-minutes: 10
         shell: pwsh
         env:
           STUDY_DESKTOP_SMOKE: '1'
@@ -110,10 +111,31 @@ jobs:
           $installPath = "$env:RUNNER_TEMP\学习桌面\Study Agent install test"
           $installed = Start-Process -FilePath $installer.FullName -ArgumentList '/S', "/D=$installPath" -PassThru -Wait
           if ($installed.ExitCode -ne 0) { throw 'Installer failed' }
+          if (-not (Test-Path "$installPath\Study Agent.exe")) { throw 'Installer did not create the app' }
+      - name: Open the installed Windows app
+        if: runner.os == 'Windows'
+        timeout-minutes: 2
+        shell: pwsh
+        env:
+          STUDY_DESKTOP_SMOKE: '1'
+        run: |
+          $installPath = "$env:RUNNER_TEMP\学习桌面\Study Agent install test"
           $opened = Start-Process -FilePath "$installPath\Study Agent.exe" -PassThru -Wait
           if ($opened.ExitCode -ne 0) { throw 'Installed app did not open' }
+      - name: Check installed Windows tools and Chinese PDF
+        if: runner.os == 'Windows'
+        timeout-minutes: 5
+        shell: pwsh
+        run: |
+          $installPath = "$env:RUNNER_TEMP\学习桌面\Study Agent install test"
           & "$installPath\resources\python\python.exe" -X utf8 verification/desktop/check.py --runtime "$installPath\resources\runtime"
           if ($LASTEXITCODE -ne 0) { throw 'Installed runtime failed' }
+      - name: Uninstall Windows app and retain learning files
+        if: runner.os == 'Windows'
+        timeout-minutes: 3
+        shell: pwsh
+        run: |
+          $installPath = "$env:RUNNER_TEMP\学习桌面\Study Agent install test"
           $retained = "$env:APPDATA\Study Agent\learning\installer-retention-check.txt"
           New-Item -ItemType Directory -Force -Path (Split-Path $retained) | Out-Null
           Set-Content -Path $retained -Value 'Saved learning files must survive uninstall.'
