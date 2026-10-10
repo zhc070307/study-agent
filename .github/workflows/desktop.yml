@@ -108,12 +108,19 @@ jobs:
           $installPath = "$env:RUNNER_TEMP\学习桌面\Study Agent install test"
           $installed = Start-Process -FilePath $installer.FullName -ArgumentList '/S', "/D=$installPath" -PassThru -Wait
           if ($installed.ExitCode -ne 0) { throw 'Installer failed' }
-          & "$installPath\Study Agent.exe"
-          if ($LASTEXITCODE -ne 0) { throw 'Installed app did not open' }
+          $opened = Start-Process -FilePath "$installPath\Study Agent.exe" -PassThru -Wait
+          if ($opened.ExitCode -ne 0) { throw 'Installed app did not open' }
           & "$installPath\resources\python\python.exe" -X utf8 verification/desktop/check.py --runtime "$installPath\resources\runtime"
           if ($LASTEXITCODE -ne 0) { throw 'Installed runtime failed' }
+          $retained = "$env:APPDATA\Study Agent\learning\installer-retention-check.txt"
+          New-Item -ItemType Directory -Force -Path (Split-Path $retained) | Out-Null
+          Set-Content -Path $retained -Value 'Saved learning files must survive uninstall.'
           $uninstaller = "$installPath\Uninstall Study Agent.exe"
-          if (Test-Path $uninstaller) { Start-Process -FilePath $uninstaller -ArgumentList '/S' -Wait }
+          if (-not (Test-Path $uninstaller)) { throw 'Uninstaller was not created' }
+          $removed = Start-Process -FilePath $uninstaller -ArgumentList '/S' -PassThru -Wait
+          if ($removed.ExitCode -ne 0) { throw 'Uninstaller failed' }
+          if (Test-Path "$installPath\Study Agent.exe") { throw 'Uninstaller left the installed app' }
+          if (-not (Test-Path $retained)) { throw 'Uninstaller removed learning files' }
       - name: Open the app copied from the Mac disk image
         if: runner.os == 'macOS'
         shell: bash
