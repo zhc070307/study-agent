@@ -91,7 +91,8 @@ class TextbookTests(unittest.TestCase):
         pages[597] = ['Arc length derivation is on this original page.']
         self.file = self.upload(pdf(pages), '长教材.pdf')
         for backend in ('0', '1'):
-            if backend == '0' and not shutil.which('pdftotext'):
+            if backend == '0' and (os.environ.get('STUDY_NATIVE') == '1' or
+                                   not all(shutil.which(command) for command in ('pdftotext', 'pdftoppm'))):
                 continue
             if backend == '1' and not importlib.util.find_spec('pypdfium2'):
                 continue
