@@ -22,14 +22,14 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.1.0
         with:
           node-version: 24.19.0
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6.1.0
         with:
           version: 11.19.0
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@v10.3.0
       - name: Bundled Python
         run: uv python install 3.12.12
       - uses: r-lib/actions/setup-tinytex@v2
@@ -162,7 +162,7 @@ jobs:
           "$installed_app/Contents/MacOS/Study Agent"
           "$installed_app/Contents/Resources/python/bin/python3" -X utf8 verification/desktop/check.py --runtime "$installed_app/Contents/Resources/runtime"
           codesign --verify --deep --strict "$installed_app"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7.0.2
         with:
           name: Study-Agent-${{ runner.os }}-${{ runner.arch }}
           path: |

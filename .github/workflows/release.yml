@@ -39,7 +39,7 @@ jobs:
           print('Verified Windows and macOS installers; reusing the tested bytes.')
           PY
       - name: Retrieve verified installers
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8.0.2
         with:
           github-token: ${{ github.token }}
           run-id: ${{ env.INSTALLER_RUN }}
