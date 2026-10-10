@@ -4,6 +4,8 @@ import base64
 import hashlib
 import json
 import mimetypes
+import os
+import pdf_tools
 from pathlib import Path
 import subprocess
 import sys
@@ -19,7 +21,7 @@ from study_agent.learning import LearningService
 from agreements import read_all, read_only, library_root, save as save_agreement
 from semesters import Semesters
 
-MAX_FILE = 20 * 1024 * 1024
+MAX_FILE = 100 * 1024 * 1024
 MAX_AUDIO = 200 * 1024 * 1024
 CATEGORIES={"materials":"课程资料","notes":"笔记","practice":"练习","assignments":"作业"}
 
@@ -180,8 +182,10 @@ class Workspace:
             if file['mime'] == 'application/pdf':
                 with tempfile.TemporaryDirectory() as directory:
                     output = Path(directory) / 'text.txt'
-                    subprocess.run(['pdftotext', str(self.blobs/file['sha256']), str(output)], check=True, timeout=30, capture_output=True)
-                    result['text'] = output.read_text()[:100000]
+                    if os.environ.get('STUDY_NATIVE')=='1':result['text']=pdf_tools.text(self.blobs/file['sha256'])[:100000]
+                    else:
+                        subprocess.run(['pdftotext', str(self.blobs/file['sha256']), str(output)], check=True, timeout=30, capture_output=True)
+                        result['text'] = output.read_text(encoding='utf-8')[:100000]
             if file['mime'] in ('image/png','image/jpeg','image/webp','image/gif'):
                 result['images']=[{'data':base64.b64encode(self.content(file)).decode(),'mimeType':file['mime']}]
             return result
@@ -465,7 +469,11 @@ class Workspace:
             target.write_bytes(self.content(asset))
         env = dict(__import__('os').environ, openin_any='p', openout_any='p')
         try:
-            result = subprocess.run(['latexmk','-norc','-xelatex','-interaction=nonstopmode','-halt-on-error','-no-shell-escape','main.tex'],cwd=work,env=env,capture_output=True,timeout=90)
+            if os.environ.get('STUDY_NATIVE')=='1':
+                for unused in range(3):
+                    result=subprocess.run(['xelatex','-interaction=nonstopmode','-halt-on-error','-no-shell-escape','main.tex'],cwd=work,env=env,capture_output=True,timeout=30)
+                    if result.returncode:break
+            else:result = subprocess.run(['latexmk','-norc','-xelatex','-interaction=nonstopmode','-halt-on-error','-no-shell-escape','main.tex'],cwd=work,env=env,capture_output=True,timeout=90)
             log = (result.stdout+result.stderr).decode(errors='replace')[-20000:]
             ok = result.returncode==0 and (work/'main.pdf').is_file()
         except (subprocess.TimeoutExpired,FileNotFoundError) as error:
@@ -473,8 +481,10 @@ class Workspace:
         record = dict(kind=prepared.get('kind'),course=prepared.get('course'),brief=prepared.get('brief'),id=identifier,file=file['id'],source_sha256=file['sha256'],ok=ok,log=log,work=str(work))
         if ok:
             try:
-                info = subprocess.run(['pdfinfo',str(work/'main.pdf')],env=dict(env,LC_ALL='C'),capture_output=True,text=True,check=True,timeout=15).stdout
-                count = next(int(line.split(':')[1]) for line in info.splitlines() if line.startswith('Pages:'))
+                if os.environ.get('STUDY_NATIVE')=='1':count=pdf_tools.pages(work/'main.pdf')
+                else:
+                    info = subprocess.run(['pdfinfo',str(work/'main.pdf')],env=dict(env,LC_ALL='C'),capture_output=True,text=True,check=True,timeout=15).stdout
+                    count = next(int(line.split(':')[1]) for line in info.splitlines() if line.startswith('Pages:'))
                 record.update(sha256=self.blob((work/'main.pdf').read_bytes()),pages=count,accepted=False)
             except (OSError,subprocess.SubprocessError,StopIteration,ValueError):
                 record.update(ok=False,log='PDF 核验未完成，上一版仍保留；请检查 PDF 读取工具后重试。')
@@ -504,8 +514,10 @@ class Workspace:
         if type(page)!=int or page<1: raise ValueError('页码无效')
         with tempfile.TemporaryDirectory() as directory:
             target = Path(directory)/'page'
-            subprocess.run(['pdftoppm','-f',str(page),'-l',str(page),'-scale-to','1400','-singlefile','-png',str(self.blobs/file['sha256']),str(target)],check=True,capture_output=True,timeout=30)
-            image = target.with_suffix('.png').read_bytes()
+            if os.environ.get('STUDY_NATIVE')=='1':image=pdf_tools.image(self.blobs/file['sha256'],page)
+            else:
+                subprocess.run(['pdftoppm','-f',str(page),'-l',str(page),'-scale-to','1400','-singlefile','-png',str(self.blobs/file['sha256']),str(target)],check=True,capture_output=True,timeout=30)
+                image = target.with_suffix('.png').read_bytes()
         if file.get('compile'):
             with db.atomic(self.conn, bump_revision=False): self.conn.execute('INSERT OR IGNORE INTO desktop_views VALUES (?,?)',(file['compile'],page))
         return {'file':file['id'],'page':page,'sha256':file['sha256'],'images':[{'data':base64.b64encode(image).decode(),'mimeType':'image/png'}]}

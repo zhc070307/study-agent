@@ -17,7 +17,7 @@ jobs:
         with:
           version: 11.19.0
       - name: PDF dependencies
-        run: sudo apt-get update && sudo apt-get install -y latexmk texlive-xetex texlive-lang-chinese texlive-latex-extra texlive-fonts-recommended texlive-science poppler-utils
+        run: sudo apt-get update && sudo apt-get install -y ripgrep latexmk texlive-xetex texlive-lang-chinese texlive-latex-extra texlive-fonts-recommended texlive-science poppler-utils
       - run: ./study-agent setup
       - name: Browser dependencies
         run: pnpm exec playwright install --with-deps chromium

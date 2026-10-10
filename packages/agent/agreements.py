@@ -1,6 +1,6 @@
 """Small versioned agreements: learning-wide, semester and course, never inferred by filename."""
 from pathlib import Path
-import fcntl
+import file_lock as fcntl
 import hashlib
 import json
 import tempfile

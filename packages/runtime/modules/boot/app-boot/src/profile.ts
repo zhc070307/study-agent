@@ -682,6 +682,9 @@ function dropRetiredBundles(dir: string, manifest: ProfileManifest): ProfileMani
  * `existsSync` follows the symlinks pnpm's isolated layout uses.
  */
 function packageDirFromAnchor(anchor: string, packageName: string): string | undefined {
+  if (process.env.STUDY_NATIVE === '1') {
+    try { return dirname(createRequire(anchor).resolve(`${packageName}/package.json`)) } catch { /* continue ordinary lookup */ }
+  }
   // resolve.paths returns null only for builtins, which no bundle name is.
   /* v8 ignore next */
   for (const searchPath of createRequire(anchor).resolve.paths(packageName) ?? []) {

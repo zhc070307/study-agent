@@ -1,0 +1,77 @@
+name: Desktop installers
+on:
+  push:
+    paths:
+      - 'packages/**'
+      - 'ui/**'
+      - 'scripts/desktop-build.py'
+      - 'verification/desktop/**'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/desktop.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  installer:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.19.0
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.19.0
+      - uses: astral-sh/setup-uv@v6
+      - name: Bundled Python
+        run: uv python install 3.12.12
+      - uses: r-lib/actions/setup-tinytex@v2
+      - name: Build-time Perl on Windows
+        if: runner.os == 'Windows'
+        run: choco install strawberryperl -y --no-progress
+      - name: Prepare Chinese PDF packages
+        shell: bash
+        run: |
+          tlmgr update --self
+          tlmgr install xetex ctex fandol amsmath amsfonts graphics geometry booktabs enumitem xcolor hyperref pgf siunitx mathtools tcolorbox pgfplots fontspec
+      - name: Assemble native runtime
+        shell: bash
+        run: |
+          native_python="$(uv python find 3.12.12)"
+          uv run --python 3.12.12 --no-project python scripts/desktop-build.py --python "$native_python"
+      - name: Check the bundled runtime
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = Windows ]; then native_python=.build/desktop-python/python.exe; else native_python=.build/desktop-python/bin/python3; fi
+          "$native_python" -X utf8 verification/desktop/check.py --runtime .build/desktop-runtime
+          "$native_python" -X utf8 -m unittest discover -s verification/desktop -p 'test_*.py' -q
+      - name: Build installer
+        shell: bash
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: |
+          npm ci --prefix packages/desktop
+          npm run build --prefix packages/desktop -- --publish never
+      - name: Open the packaged app
+        shell: bash
+        env:
+          STUDY_DESKTOP_SMOKE: '1'
+        run: |
+          if [ "$RUNNER_OS" = Windows ]; then
+            "dist/desktop/win-unpacked/Study Agent.exe"
+          else
+            packaged_app="$(find dist/desktop -path '*/Contents/MacOS/Study Agent' -type f -print -quit)"
+            "$packaged_app"
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Study-Agent-${{ runner.os }}-${{ runner.arch }}
+          path: |
+            dist/desktop/*.dmg
+            dist/desktop/*.exe
+          if-no-files-found: error

@@ -190,11 +190,11 @@ with db.atomic(s.conn):
     def test_failed_memory_operation_restores_file_and_progress(self):
         old = self.call('read', {})['memory']
         run = self.start('memory')
-        real = self.store.learning.rewrite_memory
+        real = type(self.store.learning).rewrite_memory
         def failed(*args, **kwargs):
             real(*args, **kwargs)
             raise ValueError('Interrupted after file write')
-        with patch.object(self.store.learning, 'rewrite_memory', side_effect=failed):
+        with patch.object(type(self.store.learning), 'rewrite_memory', autospec=True, side_effect=failed):
             with self.assertRaisesRegex(ValueError, 'Interrupted'):
                 self.advance(run, {'content': 'Should roll back', 'expected': old['content_hash'], 'summary': 'Check'})
         self.assertEqual(self.call('read', {})['memory']['content'], '')

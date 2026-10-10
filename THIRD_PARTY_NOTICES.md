@@ -131,3 +131,7 @@
 | `lightningcss@1.33.0` | MPL-2.0 |
 | `lightningcss-linux-x64-gnu@1.33.0` | MPL-2.0 |
 | `argparse@2.0.1` | Python-2.0 |
+
+## Native desktop components
+
+The desktop shell uses Electron and electron-builder (MIT), Node.js (its bundled license), and Python (PSF License). Native PDF reading/rendering uses pypdfium2 (Apache-2.0/BSD-3-Clause), PDFium and its bundled third-party license texts, and Pillow (HPND). Time zone data uses tzdata (Apache-2.0 and public-domain IANA data). The Chinese PDF compiler redistributes a selected TeX Live/TinyTeX tree; each TeX package and font retains its license and license documents in that tree. Installation resources retain the component license texts. No PyMuPDF or other AGPL PDF library is bundled. Optional speech inference weights are fetched only on user request and remain governed by their upstream model license.

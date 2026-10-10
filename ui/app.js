@@ -392,7 +392,7 @@ $('#add-files').addEventListener('click', () => $('#file-input').click());
 async function importFiles(incoming) {
   let saved=0;
   for (const raw of incoming) {
-    const limit=raw.type.startsWith('audio/')?200:20;
+    const limit=raw.type.startsWith('audio/')?200:100;
     if(raw.size>limit*1024*1024){toast(`${raw.name} 超过 ${limit} MB`);continue;}
     try {
       const data=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result.split(',')[1]);reader.onerror=reject;reader.readAsDataURL(raw);});
@@ -463,10 +463,15 @@ window.addEventListener('pagehide',()=>{
 $('#semester-menu').addEventListener('click',()=>{
   if(!semesterList)return;
   const choices=semesterList.items.map(s=>`<label class="picker-option"><input type="radio" name="semester" value="${esc(s.id)}" ${s.id===semesterId?'checked':''}><span>${esc(s.name)}${s.status==='archived'?' · 已归档':s.status==='removed'?' · 已移除':''}</span></label>`).join('');
-  showPicker('学期',choices+`<select id="semester-action" class="picker-input" aria-label="学期操作"><option value="switch">打开选中学期</option><option value="create">开始新学期</option><option value="rename">重命名</option><option value="archive">归档，保留记录</option><option value="reopen">重新开始</option><option value="remove">移除，可恢复</option><option value="restore">恢复已移除学期</option><option value="export">下载选中学期备份</option></select><p class="picker-note">通用学习习惯和助理流程独立保存，换学期仍保留。旧任务与课程状态不会带入新学期。</p>`,async()=>{
+  showPicker('学期',choices+`<select id="semester-action" class="picker-input" aria-label="学期操作"><option value="switch">打开选中学期</option><option value="create">开始新学期</option><option value="rename">重命名</option><option value="archive">归档，保留记录</option><option value="reopen">重新开始</option><option value="remove">移除，可恢复</option><option value="restore">恢复已移除学期</option><option value="export">下载选中学期备份</option><option value="import">恢复备份为独立学期</option></select><input id="semester-backup" class="picker-input" type="file" accept=".zip" hidden><p class="picker-note">通用学习习惯和助理流程独立保存，换学期仍保留。旧任务与课程状态不会带入新学期。</p>`,async()=>{
     const action=$('#semester-action').value,id=$('#picker-body input:checked')?.value;
     const selected=semesterList.items.find(s=>s.id===id);
     if(!selected)return;
+    if(action==='import'){
+      const file=$('#semester-backup').files[0];if(!file){toast('请先选择学期备份文件');return;}
+      if(file.size>50*1024**3){toast('备份超过当前支持的 50 GB');return;}
+      try{const response=await fetch('/api/semester-import?expected='+semesterList.version,{method:'POST',headers:{'Content-Type':'application/zip'},body:file});const result=await response.json();if(!response.ok)throw new Error(result.error);await refresh(true);toast('已恢复为独立学期，原有学期未改动');}catch(error){toast(error.message);}return;
+    }
     if(action==='export'){location.href='/api/semester-export?semester='+id;return;}
     const args={semester:id,expected:semesterList.version};
     if(action==='create'||action==='rename'){args.name=window.prompt(action==='create'?'新学期叫什么？':'学期名称',action==='rename'?selected.name:'');if(!args.name)return;}
@@ -474,6 +479,7 @@ $('#semester-menu').addEventListener('click',()=>{
     if(action==='remove'){args.confirm=window.prompt('移除后可以恢复。请输入要移除的学期名称：'+selected.name);if(args.confirm===null)return;}
     try{await syncChain;await api('/api/semesters',{action,args});location.reload();}catch(error){toast(error.message);await refresh();}
   });
+  $('#semester-action').addEventListener('change',()=>{$('#semester-backup').hidden=$('#semester-action').value!=='import';});
 });
 $('#remove-files').addEventListener('click',async()=>{
   const chosen=[...state.selected].map(getFile).filter(Boolean);
@@ -484,3 +490,15 @@ $('#file-trash').addEventListener('click',()=>showPicker('恢复文件',removedF
   const file=removedFiles.find(f=>f.id===$('#picker-body input:checked')?.value);if(!file)return;
   try{await operation('restore_file',{file:file.id,expected:file.sha256});await refresh(true);}catch(error){toast(error.message);}
 }));
+
+let settingsChecked=false;
+async function openSettings(first=false){
+  const settings=await api('/api/settings');
+  showPicker(first?'开始使用':'设置',`<p class="picker-note">填写 DeepSeek 的服务密钥，让助理回答问题。文件整理与阅读无需先填写。</p><label class="settings-label">模型服务密钥<input id="model-key" class="picker-input" type="password" autocomplete="off" placeholder="${settings.configured?'已保存；留空保留现有密钥':'填写你的密钥'}"></label><a class="text-button" href="https://platform.deepseek.com/api_keys" target="_blank" rel="noopener">获取密钥</a><label class="settings-label">助理模型<select id="model-choice" class="picker-input"><option value="deepseek-flash">DeepSeek Flash</option><option value="deepseek-pro">DeepSeek Pro</option></select></label>`,async()=>{
+    try{await api('/api/settings',{api_key:$('#model-key').value,model:$('#model-choice').value,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone});$('#model-key').value='';toast('设置已保存');}catch(error){toast(error.message);}
+  });
+  $('#model-choice').value=settings.model;
+}
+$('#settings').addEventListener('click',()=>openSettings().catch(error=>toast(error.message)));
+async function checkSettings(){if(settingsChecked)return;settingsChecked=true;try{const value=await api('/api/settings');if(value.needs_setup)await openSettings(true);}catch(error){toast(error.message);}}
+checkSettings();

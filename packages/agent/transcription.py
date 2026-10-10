@@ -1,6 +1,6 @@
 """Optional, asynchronous LocalTranscribe tool; heavy dependencies load only on request."""
 from __future__ import annotations
-import fcntl
+import file_lock as fcntl
 import hashlib
 import json
 import os
@@ -186,6 +186,76 @@ class Transcription:
             os.killpg(job['pid'],signal.SIGTERM)
         except ProcessLookupError: pass
         return {'id':job['id'],'status':'stopping','message':'正在停止；已完成片段保留'}
+
+
+class NativeTranscription(Transcription):
+    """The app-owned GPU service owns work; any tool can poll durable results."""
+    def records(self):
+        result=[]
+        for path in sorted(self.jobs.glob('*/job.json')):
+            try:
+                with (path.parent/'worker.lock').open('a+') as lock:
+                    fcntl.flock(lock,fcntl.LOCK_EX)
+                    job=json.loads(path.read_text(encoding='utf-8'))
+                    if job['status']=='running':
+                        try:
+                            reply=self.host_request('/jobs/'+job['id'])
+                            if reply['status']=='completed':
+                                self.complete(job,reply['text'])
+                            elif reply['status']!='running':job.update(status=reply['status'],message=reply.get('message','转写已停止'))
+                            else:job.update(message=reply.get('message','正在转写'),progress=reply.get('progress'))
+                        except RuntimeError:job.update(status='interrupted',message='转写连接中断；原录音与已完成片段保留，可以继续')
+                        atomic(path,job)
+                result.append(job)
+            except (OSError,ValueError,KeyError):continue
+        return result
+
+    def complete(self,job,text):
+        with self.managed_store() as store:
+            original=store.file(job['file'])
+            if original['sha256']!=job['source_sha256']:raise RuntimeError('录音已变化，原版本转写保留')
+            transcript=store.perform('create',{'name':Path(job['name']).stem+'-原稿.txt','text':text,'mime':'text/plain','folder':original['folder'],'course':original['course'],'sources':[original['id']],'transcription':{'job':job['id'],'source_sha256':job['source_sha256'],'engine':'LocalTranscribe/Qwen3-ASR-1.7B'}},'transcribe-'+job['id'])
+            job.update(status='completed',message='转写已保存，重要术语与数字请核对',transcript=transcript['id'])
+            store.message('transcribe-'+job['id'],job['file'],{'role':'assistant','text':'录音原稿已保存为 '+transcript['name']+'。请核对重要术语和数字。'})
+
+    def managed_store(self):
+        class Managed(Workspace):
+            def __enter__(self):return self
+            def __exit__(self,*unused):self.close()
+        return Managed(self.root)
+
+    def start(self,args):
+        if read_only(self.root):raise ValueError('这个学期已归档，请重新开始后再转写')
+        with self.managed_store() as store:
+            file=store.file(args['file'])
+            if not file['mime'].startswith('audio/'):raise ValueError('请选择录音；已有文字稿可以直接交给助理')
+            if args.get('expected')!=file['sha256']:raise ValueError('录音版本已变化，请重新读取')
+            audio=store.content(file)
+        resources=self.resources()
+        if not resources['eligible']:return {'blocked':True,'resources':resources,'message':resources['message']+'。已有文字稿可以直接使用。'}
+        if not self.ready() and args.get('allow_install') is not True:
+            return {'needs_install':True,'resources':resources,'message':'设备检查通过。已有文字稿无需下载；转写录音首次需要下载环境及约 3.8 GiB 模型，是否继续？'}
+        self.shared.mkdir(parents=True,exist_ok=True)
+        with (self.shared/'active.lock').open('a+') as lock:
+            fcntl.flock(lock,fcntl.LOCK_EX)
+            prior=next((job for job in self.records() if job['file']==file['id'] and job['source_sha256']==file['sha256']),None)
+            if prior and prior['status'] in ('running','completed'):return prior
+            identifier=prior['id'] if prior else uuid.uuid4().hex
+            attempt=uuid.uuid4().hex
+            reply=self.host_request('/jobs/'+identifier,data=audio,headers={'X-Attempt':attempt,'X-Source-SHA256':file['sha256'],'X-File-Name':file['name'].encode().hex(),'X-Allow-Install':'true' if args.get('allow_install') is True else 'false'},timeout=30)
+            job={'id':identifier,'file':file['id'],'source_sha256':file['sha256'],'name':file['name'],'status':'running','message':reply.get('message','正在转写'),'attempt':attempt}
+            atomic(self.jobs/identifier/'job.json',job)
+            return job
+
+    def stop(self,args):
+        job=next((job for job in self.records() if job['id']==args.get('job')),None)
+        if not job:raise ValueError('转写任务不存在')
+        if job['status']!='running':return job
+        self.host_request('/jobs/'+job['id']+'/stop',data=b'',headers={'X-Attempt':job['attempt']})
+        return {'id':job['id'],'status':'stopping','message':'正在停止，已完成片段保留'}
+
+
+if os.environ.get('STUDY_NATIVE')=='1':Transcription=NativeTranscription
 
 
 def perform(root,action,args):

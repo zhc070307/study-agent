@@ -250,18 +250,31 @@ class Store:
         return dict(run, title=definition['title'], available=available,
                     next=available[0] if len(available) == 1 else None)
 
+    def agent_memory(self):
+        root=self.root if self.root.name=='shared' and self.root.parent.name=='.semesters' else library_root(self.root)/'.semesters/shared'
+        if root==self.root:
+            value=self.learning.memory_status(self.root)
+            path=Path(value['path']);value['content']=path.read_text(encoding='utf-8') if path.exists() else ''
+            return value
+        shared=Store(root,inherit=False)
+        try:return shared.agent_memory()
+        finally:shared.conn.close()
+
     def read(self, args):
         if args.get('run'):
             return self.status(self.run(args['run']))
         courses = [dict(row) for row in self.conn.execute('SELECT id,code,name FROM courses ORDER BY code')]
-        memory = self.learning.memory_status(self.root)
-        memory['content'] = Path(memory['path']).read_text() if Path(memory['path']).exists() else ''
+        memory = self.agent_memory()
+        legacy=self.root/'.study-system/AGENT_MEMORY.md'
+        legacy_memory=legacy.read_text(encoding='utf-8') if legacy.exists() and str(legacy)!=memory['path'] else ''
         shared=Store(library_root(self.root)/'.semesters/shared',inherit=False)
         try: learning_flows={r['flow']:shared.version(r['version']) for r in shared.conn.execute("SELECT flow,version FROM flow_active WHERE scope='*'")}
         finally:shared.conn.close()
         from transcription import Transcription
         transcription=Transcription(self.root).status()
-        result = {'transcription':transcription,'agreements':read_all(self.root,args.get('course')), 'learning_flows':learning_flows, 'courses': courses, 'memory': memory, 'recovery_warnings': self.recovery_warnings,
+        restored=self.root/'.study-system/restored-references.json'
+        restored_references=json.loads(restored.read_text(encoding='utf-8')) if restored.exists() else {}
+        result = {'legacy_semester_memory':legacy_memory,'restored_references':restored_references,'transcription':transcription,'agreements':read_all(self.root,args.get('course')), 'learning_flows':learning_flows, 'courses': courses, 'memory': memory, 'recovery_warnings': self.recovery_warnings,
             'flows': {flow: self.active(flow, '*') for flow in json.loads((PROJECT / 'packages/agent/flows.json').read_text())}, 'guide': {
             'study_command': ['python3', str(PROJECT / 'study-agent'), 'service', '--data', str(self.root)],
             'standards': delivery.routes(),
@@ -409,6 +422,17 @@ class Store:
                 try:return selected.execute(dict(request,args={k:v for k,v in args.items() if k!='semester'}))
                 finally:selected.conn.close()
         if action == 'read':
+            if args.get('source'):
+                paths={'operations':PROJECT/'packages/agent/services.py','implementation':PROJECT/'packages/agent/worker.py','desktop':PROJECT/'packages/agent/workspace.py'}
+                path=paths.get(args['source'])
+                if not path:raise ValueError('请选择 operations、implementation 或 desktop')
+                lines=path.read_text(encoding='utf-8').splitlines()
+                start=max(1,int(args.get('start',1)));end=min(len(lines),int(args.get('end',start+199)))
+                return {'source':args['source'],'total_lines':len(lines),'start':start,'text':'\n'.join(lines[start-1:end])}
+            if args.get('standard'):
+                path=delivery.routes().get(args['standard'])
+                if not path:raise ValueError('该规范不存在，请使用 standards 中的名称')
+                return {'standard':args['standard'],'text':Path(path).read_text(encoding='utf-8')}
             return self.read(args)
         if read_only(self.root):raise ValueError('这个学期已归档，请重新开始后再修改')
         if action=='change' and args.get('scope')=='learning':
@@ -427,6 +451,8 @@ class Store:
                     return json.loads(prior['result'])
                 if action == 'start':
                     result = self.start(args)
+                elif action == 'memory_save':
+                    result=SERVICE_HANDLERS['memory'](self,{}, {},args,operation)
                 elif action == 'advance':
                     result = self.advance(args, operation)
                 elif action == 'change':

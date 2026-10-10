@@ -27,6 +27,13 @@ class Service:
     def __init__(self,root,cpu=False):
         self.root=Path(root);self.cpu=cpu;self.lock=threading.Lock();self.child=None;self.active=None;self.active_attempt=None;self.cancelled=set()
         self.python=self.root/'venv'/('Scripts/python.exe' if os.name=='nt' else 'bin/python')
+        for path in (self.root/'jobs').glob('*/job.json'):
+            try:
+                job=json.loads(path.read_text(encoding='utf-8'))
+                if job.get('status')=='running':
+                    job.update(status='interrupted',message='上次转写被中断，已完成片段保留，可以继续')
+                    write(path,job)
+            except (OSError,ValueError):pass
     def version(self):
         return hashlib.sha256(b''.join((SOURCE/name).read_bytes() for name in ('SOURCE.json','requirements.txt'))+str(self.cpu).encode()).hexdigest()
     def ready(self):

@@ -187,7 +187,9 @@ class Clock:
         return int(self.now().timestamp() * 1000)
 
     def today(self) -> date:
-        return self.now().astimezone(HKT).date()
+        from zoneinfo import ZoneInfo
+        import os
+        return self.now().astimezone(ZoneInfo(os.environ.get('STUDY_TIMEZONE','Asia/Hong_Kong'))).date()
 
 
 class FixedClock(Clock):

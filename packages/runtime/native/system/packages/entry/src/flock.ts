@@ -19,13 +19,23 @@ function loadBinding(): FlockBinding {
     })
   }
 
+  const require = createRequire(import.meta.url)
+  if (platform === 'darwin' || process.env.STUDY_NATIVE === '1') {
+    const koffi = require('koffi')
+    const flock = koffi.load(platform === 'darwin' ? '/usr/lib/libSystem.B.dylib' : 'libc.so.6').func('int flock(int fd, int operation)')
+    binding = {tryLock(fd, callback) {
+      const result = flock(fd, 2 | 4)
+      const errno = result === 0 ? 0 : koffi.errno()
+      queueMicrotask(() => callback(errno))
+    }}
+    return binding
+  }
   let filename = 'system.node'
   if (platform === 'linux') {
     // Node's report types omit the libc field supplied by Linux reports.
     const report = process.report.getReport() as { header: { glibcVersionRuntime?: string } }
     filename = join(report.header.glibcVersionRuntime ? 'glibc' : 'musl', filename)
   }
-  const require = createRequire(import.meta.url)
   const manifest = require.resolve(`@deepseek-ai/node-addon-system-${platform}-${arch}/package.json`)
   binding = require(join(dirname(manifest), 'bin', filename)) as FlockBinding
   return binding

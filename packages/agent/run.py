@@ -4,23 +4,27 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 
 PROJECT = Path(__file__).resolve().parents[2]
 RUNTIME = PROJECT / 'packages/runtime'
 
 def runtime_command(*args):
-    return ['node','--import','tsx/esm',str(RUNTIME/'launcher/main.ts'),*args]
+    imports=['--import',str(RUNTIME/'launcher/workspace-loader.mjs')] if os.environ.get('STUDY_NATIVE')=='1' else []
+    return [os.environ.get('STUDY_NODE','node'),*imports,'--import','tsx/esm',str(RUNTIME/'launcher/main.ts'),*args]
 
 
 def patch(data):
     # This project's composition already contains only the retained producers.
-    return [
+    result = [
         {'id': 'system-prompt', 'config': {'includeHarnessIdentity': False,
           'includeRuntimeContext': False, 'personaPrefix': '你是学习助手。'}},
         {'id': 'sandbox-policy', 'config': {'mode': 'danger-full-access', 'workspaceRoot': str(data)}},
-        {'insert': [{'id': 'attachment-local', 'name': '@deepseek-ai/dsh-attachment-local'}, {'id': 'study', 'name': str(PROJECT / 'packages/agent/study.ts'), 'config': {'data': str(data)}}]},
+        {'insert': [{'id': 'attachment-local', 'name': '@deepseek-ai/dsh-attachment-local'}, {'id': 'study', 'name': str(PROJECT / 'packages/agent/study.ts'), 'config': {'data': str(data),'python':sys.executable}}]},
     ]
+    if os.environ.get('STUDY_NATIVE')=='1':result.extend({'id':identifier,'disabled':True} for identifier in ('pty','terminal-bash','persistent-bash'))
+    return result
 
 
 def main():

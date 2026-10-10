@@ -19,6 +19,8 @@ def context(store, run, step, inputs, operation):
     # Reuse synchronization, scans and backup maintenance; Calendar is an
     # optional platform capability, never evidence that teaching occurred.
     state = build_now_context(store.conn, store.root, day, include_calendar=bool(inputs.get('calendar')))
+    state['agent_memory']=store.agent_memory()['content']
+    state['memory_maintenance']=store.agent_memory()
     state['open_tasks'] = [dict(row) for row in store.conn.execute("SELECT * FROM tasks WHERE status='open' ORDER BY task_key")]
     state['issues'] = [dict(row) for row in store.conn.execute(
         "SELECT * FROM learning_issues WHERE status='pending' ORDER BY next_retest_on,id")]
@@ -117,6 +119,13 @@ def memory(store, run, step, inputs, operation):
     content = required(inputs.get('content'), '长期约定')
     expected = required(inputs.get('expected'), '读取的记忆版本')
     summary = required(inputs.get('summary'), '记忆整理依据')
+    from agreements import library_root
+    root=store.root if store.root.name=='shared' and store.root.parent.name=='.semesters' else library_root(store.root)/'.semesters/shared'
+    if root!=store.root:
+        from worker import Store
+        shared=Store(root,inherit=False)
+        try:return shared.execute({'action':'memory_save','args':inputs,'id':'memory:'+operation})
+        finally:shared.conn.close()
     current = store.learning.memory_status(store.root)
     if current['content_hash'] != expected:
         raise ValueError('行动记忆已改变，请重新读取')

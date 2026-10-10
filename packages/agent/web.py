@@ -17,6 +17,7 @@ from urllib.parse import urlsplit, unquote
 from workspace import Workspace, encoded, PROJECT, MAX_FILE, MAX_AUDIO
 from run import patch, runtime_command
 from semesters import Semesters
+from settings import Settings
 from transcription import Transcription, perform as transcribe
 from urllib.parse import parse_qs
 from functools import wraps
@@ -25,7 +26,7 @@ def serialized(method):
     @wraps(method)
     def request(self):
         # A compile must not block status/stop. Selection changes instead refuse in-flight HTTP work.
-        if urlsplit(self.path).path in ('/api/semesters','/api/semester-export'):
+        if urlsplit(self.path).path in ('/api/semesters','/api/semester-export','/api/semester-import'):
             with self.server.lifecycle_lock:
                 if self.server.pending_operations or any(job['status']=='running' for job in Transcription(self.server.root).records()):
                     return self.reply({'error':'文件操作尚未完成，请稍后再管理学期'},409)
@@ -193,10 +194,10 @@ class Runtime:
             self.process=None
             for target in self.pending.values():target.put({'error':{'message':'请求已停止'}})
         if process and process.poll() is None:
-            os.killpg(process.pid,signal.SIGTERM)
+            subprocess.run(['taskkill','/PID',str(process.pid),'/T','/F'],capture_output=True,timeout=10) if os.name=='nt' else os.killpg(process.pid,signal.SIGTERM)
             try: process.wait(timeout=5)
             except subprocess.TimeoutExpired:
-                os.killpg(process.pid,signal.SIGKILL)
+                subprocess.run(['taskkill','/PID',str(process.pid),'/T','/F'],capture_output=True,timeout=10) if os.name=='nt' else os.killpg(process.pid,signal.SIGKILL)
                 process.wait(timeout=5)
         if self.temp: self.temp.cleanup(); self.temp=None
         if hasattr(self,'diagnostics'): self.diagnostics.close()
@@ -246,6 +247,7 @@ class Handler(BaseHTTPRequestHandler):
                     import shutil
                     shutil.copyfileobj(data,self.wfile)
                 return
+            if path=='/api/settings':return self.reply(dict(self.server.settings.status(),needs_setup=self.server.runtime.provider=='deepseek-official' and not self.server.settings.status()['configured']))
             if path=='/api/state':
                 with self.server.lifecycle_lock:
                     data=self.server.semesters.load()
@@ -302,11 +304,41 @@ class Handler(BaseHTTPRequestHandler):
         store=None
         try:
             self.trusted()
+            if urlsplit(self.path).path=='/api/semester-import':
+                if self.server.runtime.status=='running':raise ValueError('请先停止助理，再恢复备份')
+                if self.headers.get('Content-Type','').split(';')[0]!='application/zip':raise ValueError('请选择学期备份文件')
+                size=int(self.headers.get('Content-Length','0'))
+                if not 0<size<=50*1024**3:raise ValueError('备份超过当前支持的 50 GB')
+                import shutil
+                if shutil.disk_usage(tempfile.gettempdir()).free<size+1024**3:raise ValueError('临时空间不足，请先释放空间再恢复备份')
+                expected=int(parse_qs(urlsplit(self.path).query).get('expected',['-1'])[0])
+                with tempfile.TemporaryFile() as incoming:
+                    remaining=size
+                    while remaining:
+                        chunk=self.rfile.read(min(1024**2,remaining))
+                        if not chunk:raise ValueError('备份上传未完成，请重试')
+                        incoming.write(chunk);remaining-=len(chunk)
+                    incoming.seek(0)
+                    return self.reply(self.server.semesters.import_backup(incoming,expected))
             if self.headers.get('Content-Type','').split(';')[0]!='application/json': raise ValueError('请发送 JSON')
             size=int(self.headers.get('Content-Length','0'))
             if size<=0 or size>MAX_AUDIO*4//3+1024*1024: raise ValueError('请求大小无效')
             args=json.loads(self.rfile.read(size))
             path=urlsplit(self.path).path
+            if path=='/api/app-close':
+                import secrets
+                token=getattr(self.server,'close_token',None)
+                if not token or not secrets.compare_digest(str(args.get('token','')),token):raise ValueError('请求未授权')
+                self.reply({'closing':True})
+                threading.Thread(target=self.server.shutdown,daemon=True).start()
+                return
+            if path=='/api/settings':
+                if self.server.runtime.status=='running':raise ValueError('请等待助理完成或先停止，再修改设置')
+                value=self.server.settings.save(args)
+                self.server.runtime.kill()
+                self.server.runtime_options['model']=value['model']
+                self.server.runtime.model=value['model']
+                return self.reply(value)
             if path=='/api/semesters':
                 if self.server.runtime.status=='running':raise ValueError('请先停止助理或等待处理完成，再管理学期')
                 value=self.server.semesters.change(args['action'],args.get('args',{}))
@@ -321,7 +353,9 @@ class Handler(BaseHTTPRequestHandler):
                 raise ValueError('这个学期已归档，文件可查看和下载；重新开始后可以修改或提问')
             if path=='/api/transcription':
                 return self.reply(transcribe(self.server.root,args['action'],args.get('args',{})))
-            if path=='/api/chat': return self.reply(self.server.runtime.prompt(args))
+            if path=='/api/chat':
+                if not self.server.settings.status()['configured'] and self.server.runtime.provider=='deepseek-official':raise ValueError('请先打开设置，填写模型服务密钥')
+                return self.reply(self.server.runtime.prompt(args))
             if path=='/api/stop':
                 data=self.server.semesters.load()
                 if data.get('pending'):self.server.semesters.change('cancel',{'expected':data['version']})
@@ -341,7 +375,9 @@ def create_server(root,port=0,*,container=False,**runtime_options):
     server=ThreadingHTTPServer(('0.0.0.0' if container else '127.0.0.1',port),Handler)
     server.lifecycle_lock=threading.RLock()
     server.pending_operations=0
+    server.settings=Settings(root)
     server.semesters=Semesters(root)
+    runtime_options.setdefault('model',server.settings.status()['model'])
     server.root=server.semesters.directory()
     server.runtime_options=runtime_options
     server.runtime=Runtime(server.root,**runtime_options)
