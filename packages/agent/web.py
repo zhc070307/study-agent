@@ -133,6 +133,7 @@ class Runtime:
                 if text: store.message(message['id'],channel,{'role':'assistant','text':text})
             elif event.get('type')=='turn/end':
                 reason = event.get('data',{}).get('reason',{})
+                self.last_turn_reason=reason
                 if reason.get('kind') not in ('completed',None):
                     self.turn_error = '本次处理未完成，已保存的结果仍保留。'
         if frame.get('method')=='session.status' and params.get('status')=='idle':

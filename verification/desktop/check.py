@@ -53,7 +53,7 @@ export function apply(ctx){ctx.llm.registerAdapter(['native-check'],new MockAdap
         while runtime.status=='running' and time.monotonic()<deadline:time.sleep(.1)
         if runtime.status!='idle' or runtime.error:
             runtime.diagnostics.seek(0)
-            raise AssertionError((runtime.error,runtime.diagnostics.read(),[path.read_text(encoding='utf-8')[-5000:] for path in (root/'.harness').rglob('*.jsonl')]))
+            raise AssertionError((runtime.error,getattr(runtime,'last_turn_reason',None),runtime.diagnostics.read(),[path.read_text(encoding='utf-8')[-5000:] for path in (root/'.harness').rglob('*.jsonl')]))
         store=Workspace(root)
         try:
             state=store.snapshot()
