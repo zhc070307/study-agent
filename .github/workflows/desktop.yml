@@ -98,6 +98,38 @@ jobs:
             native_python="$resources/python/bin/python3"
           fi
           "$native_python" -X utf8 verification/desktop/check.py --runtime "$resources/runtime"
+      - name: Install and open the Windows installer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          STUDY_DESKTOP_SMOKE: '1'
+        run: |
+          $installer = Get-ChildItem dist/desktop/*.exe | Select-Object -First 1
+          $installPath = "$env:RUNNER_TEMP\Study Agent install test"
+          $installed = Start-Process -FilePath $installer.FullName -ArgumentList '/S', "/D=$installPath" -PassThru -Wait
+          if ($installed.ExitCode -ne 0) { throw 'Installer failed' }
+          & "$installPath\Study Agent.exe"
+          if ($LASTEXITCODE -ne 0) { throw 'Installed app did not open' }
+          & "$installPath\resources\python\python.exe" -X utf8 verification/desktop/check.py --runtime "$installPath\resources\runtime"
+          if ($LASTEXITCODE -ne 0) { throw 'Installed runtime failed' }
+          $uninstaller = "$installPath\Uninstall Study Agent.exe"
+          if (Test-Path $uninstaller) { Start-Process -FilePath $uninstaller -ArgumentList '/S' -Wait }
+      - name: Open the app copied from the Mac disk image
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          STUDY_DESKTOP_SMOKE: '1'
+        run: |
+          disk_image="$(find dist/desktop -maxdepth 1 -name '*.dmg' -print -quit)"
+          mount_point="$RUNNER_TEMP/study-disk-image"
+          installed_app="$RUNNER_TEMP/study-install-test/Study Agent.app"
+          mkdir -p "$mount_point" "$(dirname "$installed_app")"
+          hdiutil attach "$disk_image" -nobrowse -mountpoint "$mount_point"
+          ditto "$mount_point/Study Agent.app" "$installed_app"
+          hdiutil detach "$mount_point"
+          codesign --verify --deep --strict "$installed_app"
+          "$installed_app/Contents/MacOS/Study Agent"
+          "$installed_app/Contents/Resources/python/bin/python3" -X utf8 verification/desktop/check.py --runtime "$installed_app/Contents/Resources/runtime"
       - uses: actions/upload-artifact@v4
         with:
           name: Study-Agent-${{ runner.os }}-${{ runner.arch }}
