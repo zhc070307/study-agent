@@ -301,7 +301,7 @@ function createFolder() {
 }
 function moveFiles() {
   if (!state.selected.size) return;
-  showPicker('把文件放到哪里？', '<p class="picker-note">移动后仍保留文件身份与关联。</p>' + [{id:'', name:'未整理'}, ...folders.map(folder=>({...folder,name:folderPath(folder.id)}))].map(folder => `<label class="picker-option"><input type="radio" name="folder" value="${esc(folder.id)}"><span>${esc(folder.name)}</span></label>`).join(''), () => {const choice = $('#picker-body input:checked'); if (!choice) {toast('请选择位置'); return;} for (const id of state.selected) getFile(id).folder = choice.value || null; renderDesktop(); toast('已移动文件，可再次选择后移回');});
+  showPicker('把文件放到哪里？', '<p class="picker-note">移动后仍保留原文和历史。所属课程改变时，关联的未完成任务会一并调整；既有学习记录保留。</p>' + [{id:'', name:'未整理'}, ...folders.map(folder=>({...folder,name:folderPath(folder.id)}))].map(folder => `<label class="picker-option"><input type="radio" name="folder" value="${esc(folder.id)}"><span>${esc(folder.name)}</span></label>`).join(''), async () => {const choice = $('#picker-body input:checked'); if (!choice) {toast('请选择位置'); return;} try{await syncChain;await operation('metadata',{expected:serverVersion,files:[...state.selected].map(id=>({id,folder:choice.value||null}))});await refresh(true);toast('文件已移动');}catch(error){toast(error.message);await refresh(true);}});
 }
 function refsText() {
   const names = [...state.contexts].map(id => getFile(id)?.name).filter(Boolean);
@@ -418,7 +418,7 @@ if (matchMedia('(max-width:720px)').matches) collapseAssistant(true);
 let draftTimer;
 $('#prompt').addEventListener('input',()=>{clearTimeout(draftTimer);draftTimer=setTimeout(persistDraft,400);});
 $('#stop-agent').addEventListener('click',async()=>{try{await api('/api/stop',{});await refresh();}catch(error){toast(error.message);}});
-$('#new-task').addEventListener('click',()=>showPicker('新建任务','<input id="task-title" class="picker-input" placeholder="要做什么？" required>',async()=>{try{await operation('task',{title:$('#task-title').value});await refresh();}catch(error){toast(error.message);}}));
+$('#new-task').addEventListener('click',()=>{showPicker('新建任务',`<input id="task-title" class="picker-input" placeholder="要做什么？" required><label class="settings-label">课程<select id="task-new-course" class="picker-input"><option value="">其他事项</option>${courses.map(course=>`<option value="${esc(course.id)}">${esc(course.name)}</option>`).join('')}</select></label><label class="settings-label">安排日期<input id="task-date" class="picker-input" type="date" value="${localDay()}"></label><p class="picker-note">日期留空表示暂不安排，可在“全部”中找到。</p>`,async()=>{try{await operation('task',{title:$('#task-title').value,course:$('#task-new-course').value||undefined,date:$('#task-date').value||null});await refresh();}catch(error){toast(error.message);}});$('#task-new-course').value=taskCourse;});
 $('#transcribe-file').addEventListener('click',async()=>{
   const file=getFile(state.active),job=transcription.jobs.find(item=>item.file===file.id&&item.source_sha256===file.sha256);
   if(job?.status==='completed'){openFile(job.transcript);return;}

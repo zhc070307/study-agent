@@ -47,6 +47,8 @@ def prepare(args):
     target=BUILD/'desktop-python'
     if target.exists():shutil.rmtree(target)
     shutil.copytree(python_root,target,symlinks=True)
+    # This is our private redistribution, not uv's managed installation.
+    for marker in target.rglob('EXTERNALLY-MANAGED'):marker.unlink()
     python=target/('python.exe' if os.name=='nt' else 'bin/python3')
     subprocess.run([str(python),'-m','pip','install','--disable-pip-version-check','pypdfium2==4.30.0','pillow==11.3.0','tzdata==2025.2'],check=True)
     tex_root=Path(subprocess.check_output(['kpsewhich','-var-value=TEXMFROOT'],text=True).strip())

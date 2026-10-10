@@ -62,7 +62,8 @@ with tempfile.TemporaryDirectory(prefix='study-profile-loop-') as directory:
                 raise AssertionError(diagnostics.read())
             conn = sqlite3.connect(root / '.study-system/data/task_memory.sqlite3')
             row = conn.execute('SELECT session,status,history FROM flow_runs').fetchone()
-            assert row == ('profile-demo', 'open', '[]'), row
+            diagnostics.seek(0)
+            assert row == ('profile-demo', 'open', '[]'), (row, frames, diagnostics.read())
             conn.close()
             assert '学习流程已经开始' in json.dumps(frames, ensure_ascii=False)
             send(3, 'shutdown')
