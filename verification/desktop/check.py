@@ -22,6 +22,7 @@ from agreements import save,read_all
 with tempfile.TemporaryDirectory(prefix='study-native-') as temporary:
     root=Path(temporary)
     tex_root=PROJECT.parent/'desktop-tex'
+    if not tex_root.exists():tex_root=PROJECT.parent/'tex'
     if tex_root.exists():
         tex_bin=tex_root/'bin'/('windows' if os.name=='nt' else 'universal-darwin')
         os.environ['PATH']=str(tex_bin)+os.pathsep+os.environ['PATH']

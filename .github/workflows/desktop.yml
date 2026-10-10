@@ -85,6 +85,18 @@ jobs:
             packaged_app="$(find dist/desktop -path '*/Contents/MacOS/Study Agent' -type f -print -quit)"
             "$packaged_app"
           fi
+      - name: Verify runtime inside the packaged app
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = Windows ]; then
+            resources="dist/desktop/win-unpacked/resources"
+            native_python="$resources/python/python.exe"
+          else
+            packaged_app="$(find dist/desktop -path '*/Contents/MacOS/Study Agent' -type f -print -quit)"
+            resources="$(dirname "$(dirname "$packaged_app")")/Resources"
+            native_python="$resources/python/bin/python3"
+          fi
+          "$native_python" -X utf8 verification/desktop/check.py --runtime "$resources/runtime"
       - uses: actions/upload-artifact@v4
         with:
           name: Study-Agent-${{ runner.os }}-${{ runner.arch }}
