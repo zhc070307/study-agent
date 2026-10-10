@@ -32,11 +32,11 @@ export function apply(ctx: Context) {
     options=>{
       const read=last(options)
       if(!read.text.includes('瞬时变化率'))throw new Error('Actual source was not read')
-      return tool('web-folder','folder',{name:'本次练习'})
+      return tool('web-folder','course',{code:'CALC',name:'微积分'})
     },
-    options=>tool('web-practice','create',{name:'平方函数练习.md',mime:'text/markdown',kind:'practice',folder:last(options).id,text:'# 练习\n\n求 f(x)=x² 在 x=3 时的导数，并解释其含义。',sources:[source.id]}),
+    options=>tool('web-practice','create',{name:'平方函数练习.md',mime:'text/markdown',kind:'practice',course:'CALC',text:'# 练习\n\n求 f(x)=x² 在 x=3 时的导数，并解释其含义。',sources:[source.id]}),
     options=>{practice=last(options);return tool('web-task','task',{title:'完成平方函数练习',file:practice.id})},
-    ()=>tool('web-tex','create',{name:'导数说明.tex',mime:'text/x-tex',text:String.raw`\documentclass[UTF8,fontset=fandol]{ctexart}
+    ()=>tool('web-tex','create',{name:'导数说明.tex',mime:'text/x-tex',course:'CALC',category:'notes',text:String.raw`\documentclass[UTF8,fontset=fandol]{ctexart}
 \usepackage{amsmath}
 \begin{document}
 \section{导数与变化率}

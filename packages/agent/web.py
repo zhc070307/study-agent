@@ -327,7 +327,7 @@ class Handler(BaseHTTPRequestHandler):
                 if data.get('pending'):self.server.semesters.change('cancel',{'expected':data['version']})
                 return self.reply(self.server.runtime.stop())
             if path!='/api/workspace': return self.reply({'error':'未找到操作'},404)
-            if args['action'] not in ('remove_file','restore_file','create','metadata','write','restore','history','folder','task','check_task','answer','draft','compile','read','page'):
+            if args['action'] not in ('remove_file','restore_file','create','metadata','write','restore','history','folder','course','task','check_task','answer','draft','compile','read','page'):
                 raise ValueError('此操作请交由助理核验')
             store=Workspace(self.server.root)
             return self.reply(store.perform(args['action'],args.get('args',{}),args.get('id','')))

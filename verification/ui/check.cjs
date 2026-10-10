@@ -16,10 +16,11 @@ const {chromium}=require(process.env.STUDY_UI_PLAYWRIGHT_MODULE || path.join(pac
   const port=await new Promise((resolve,reject)=>{processChild.stdout.once('data',chunk=>resolve(Number(chunk.toString().trim())));processChild.once('exit',code=>reject(new Error('Server exited '+code+': '+diagnostics)));});
   const origin=`http://127.0.0.1:${port}`;
   async function api(endpoint,value){const response=await fetch(origin+endpoint,value===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(value)});const result=await response.json();assert.ok(response.ok,JSON.stringify(result));return result;}
-  const op=(action,args,id=crypto.randomUUID())=>api('/api/workspace',{action,args,id});
+  const op=(action,args,id=crypto.randomUUID())=>api('/api/workspace',{action,args,id,semester:'initial'});
   let browser;
   try {
-    const folder=await op('folder',{name:'课程材料'});
+    const course=await op('course',{code:'CALC',name:'微积分'});
+    const folder={id:course.folders.materials};
     const source=await op('create',{name:'导数笔记.md',mime:'text/markdown',text:fs.readFileSync(path.join(root,'ui/samples/notes/derivatives.md'),'utf8'),folder:folder.id});
     const latex=await op('create',{name:'向量与坐标.tex',mime:'text/x-tex',text:fs.readFileSync(path.join(root,'ui/samples/notes/vectors.tex'),'utf8'),folder:folder.id});
     const pdf=await op('create',{name:'导数与微分.pdf',mime:'application/pdf',data:fs.readFileSync(path.join(root,'ui/samples/materials/derivatives.pdf')).toString('base64'),folder:folder.id});
@@ -36,11 +37,13 @@ const {chromium}=require(process.env.STUDY_UI_PLAYWRIGHT_MODULE || path.join(pac
     page.on('pageerror',error=>errors.push(error.message));
     page.on('request',request=>{if(/^https?:/.test(request.url())&&!request.url().startsWith(origin+'/'))external.push(request.url());});
     await page.goto(origin);
-    await page.waitForSelector('[data-folder="'+folder.id+'"]');
-    assert.equal(await page.locator('#files').isVisible(),false);
+    await page.waitForSelector('[data-folder="'+course.folder+'"]');
+    assert.equal(await page.locator('#files').evaluate(element=>element.hidden),false);
+    await page.locator('[data-period="all"]').click();
     if(process.env.STUDY_UI_CAPTURE)await page.screenshot({path:path.join(root,'ui/previews/desktop.png')});
     // User-visible audio tool, using a scripted recognizer in the temporary test workspace.
     const audio=await op('create',{name:'第一讲录音.wav',mime:'audio/wav',data:Buffer.from('scripted audio').toString('base64'),folder:folder.id});
+    if(await page.locator('[data-folder="'+course.folder+'"]').count())await page.locator('[data-folder="'+course.folder+'"]').click();
     await page.locator('[data-folder="'+folder.id+'"]').click();
     await page.getByRole('button',{name:'打开 第一讲录音.wav',exact:true}).click();
     await page.locator('#transcribe-file').click();
@@ -53,10 +56,12 @@ const {chromium}=require(process.env.STUDY_UI_PLAYWRIGHT_MODULE || path.join(pac
     assert.equal(transcript.folder,folder.id);assert.deepEqual(transcript.sources,[audio.id]);
     assert.equal(speechState.transcription.jobs[0].status,'completed');
     await page.locator('#back').click();
-    await page.locator('#clear-folder').click();
+    await page.locator('#clear-folder').click();await page.locator('#clear-folder').click();
+    await page.locator('[data-period="all"]').click();
     await page.locator('[data-task="'+exampleTask.id+'"]').check();
     await page.waitForFunction(async id=>{const data=await (await fetch('/api/state')).json();return data.tasks.find(task=>task.id===id)?.done&&data.drafts.__layout?.active===null&&data.drafts.__layout?.folder===null;},exampleTask.id);
     await page.reload();await page.waitForSelector('[data-task="'+exampleTask.id+'"]',{state:'attached'});assert.ok(await page.locator('[data-task="'+exampleTask.id+'"]').isChecked());
+    await page.locator('.completed-tasks>summary').click();
     await page.locator('[data-task-open="'+source.id+'"]').click();
     await page.waitForSelector('.markdown-body h1');
     await page.locator('[data-mode="source"]').click();assert.equal(await page.locator('.file-text').textContent(),source.text);
@@ -77,7 +82,7 @@ const {chromium}=require(process.env.STUDY_UI_PLAYWRIGHT_MODULE || path.join(pac
     assert.ok(state.files.some(file=>file.name==='导数说明.pdf'&&file.accepted));
     assert.ok(state.tasks.some(task=>task.title==='完成平方函数练习'&&!task.done));
     assert.ok(state.messages[source.id].some(message=>message.role==='user'&&message.refs.includes('文字选区')));
-    assert.equal(state.files.find(file=>file.id===source.id).course,null);
+    assert.equal(state.files.find(file=>file.id===source.id).course,'CALC');
     // Model-created artifact is available directly in its conversation.
     await page.getByRole('button',{name:'平方函数练习.md',exact:true}).click();
     await page.locator('.answer-input').fill("f'(3)=2×3=6，表示 x=3 时的瞬时变化率。");
@@ -94,12 +99,13 @@ const {chromium}=require(process.env.STUDY_UI_PLAYWRIGHT_MODULE || path.join(pac
     await page.locator('#compare').click();await page.locator('#picker-body input[value="'+pdf.id+'"]').check();await page.locator('#picker-confirm').click();
     await page.waitForSelector('.pdf-sheet[data-rendered]');
     await page.locator('[data-pdf="next"]').click();await page.waitForSelector('.pdf-sheet[data-page-number="2"][data-rendered]');
-    const span=page.locator('.textLayer span').filter({hasText:/\S/}).first();await span.dblclick();await page.waitForSelector('#quote-bar:not([hidden])');if(process.env.STUDY_UI_CAPTURE)await page.screenshot({path:path.join(root,'ui/previews/pdf.png')});
+    const span=page.locator('.textLayer span').filter({hasText:/[\p{L}\p{N}]{2}/u}).first();await span.dblclick();await page.waitForSelector('#quote-bar:not([hidden])');if(process.env.STUDY_UI_CAPTURE)await page.screenshot({path:path.join(root,'ui/previews/pdf.png')});
     await page.locator('#ask-selection').click();assert.match(await page.locator('#contexts').textContent(),/选区/);
     await page.locator('[data-pdf="in"]').click();await page.waitForFunction(()=>document.querySelector('.pdf-zoom')?.textContent==='115%');
     await page.locator('#close-compare').click();
     // Compilation from the UI and old-PDF preservation on a real TeX error.
-    await page.locator('#back').click();if(await page.locator('#clear-folder').isVisible())await page.locator('#clear-folder').click();await page.locator('[data-folder="'+folder.id+'"]').click();
+    await page.locator('#back').click();while(await page.locator('#clear-folder').isVisible())await page.locator('#clear-folder').click();if(await page.locator('[data-folder="'+course.folder+'"]').count())await page.locator('[data-folder="'+course.folder+'"]').click();
+    await page.locator('[data-folder="'+folder.id+'"]').click();
     await page.getByRole('button',{name:'打开 向量与坐标.tex',exact:true}).click();
     await page.locator('#compile-file').click();await page.waitForSelector('.pdf-sheet[data-rendered]',{timeout:30000});
     state=await api('/api/state');const generated=state.files.find(file=>file.id===latex.id).pdf;assert.ok(generated);
@@ -115,9 +121,10 @@ const {chromium}=require(process.env.STUDY_UI_PLAYWRIGHT_MODULE || path.join(pac
     await page.waitForFunction(()=>document.querySelector('#conversation').textContent.includes('已停止'),{},{timeout:15000});
     await page.reload();await page.waitForSelector('[data-folder]',{state:'attached'});assert.ok((await api('/api/state')).files.some(file=>file.id===exercise.id));
     // Upload from the browser, and server-side rename/move with reload.
-    await page.locator('#back').click();if(await page.locator('#clear-folder').isVisible())await page.locator('#clear-folder').click();await page.locator('[data-folder="'+folder.id+'"]').click();
+    await page.locator('#back').click();while(await page.locator('#clear-folder').isVisible())await page.locator('#clear-folder').click();if(await page.locator('[data-folder="'+course.folder+'"]').count())await page.locator('[data-folder="'+course.folder+'"]').click();
+    await page.locator('[data-folder="'+folder.id+'"]').click();
     await page.locator('#file-input').setInputFiles({name:'new.md',mimeType:'',buffer:Buffer.from('# 新上传\n\n<script>window.pwned=true</script>\n![远程](https://example.com/x.png)')});
-    await page.waitForSelector('button[aria-label="打开 new.md"]');await page.getByRole('button',{name:'打开 new.md',exact:true}).click();await page.waitForSelector('.markdown-body h1');assert.equal(await page.evaluate(()=>window.pwned),undefined);
+    await page.waitForSelector('button[aria-label="打开 new.md"]');assert.equal((await api('/api/state')).files.find(file=>file.name==='new.md').folder,null);await page.getByRole('button',{name:'打开 new.md',exact:true}).click();await page.waitForSelector('.markdown-body h1');assert.equal(await page.evaluate(()=>window.pwned),undefined);
     await page.locator('#rename').click();await page.locator('#rename-input').fill('新文件.md');await page.locator('#picker-confirm').click();await page.waitForTimeout(600);
     await page.reload();await page.waitForFunction(()=>document.querySelector('#document-tabs').textContent.includes('新文件.md'));
     await page.setViewportSize({width:390,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
@@ -129,8 +136,8 @@ const {chromium}=require(process.env.STUDY_UI_PLAYWRIGHT_MODULE || path.join(pac
     const restartedPort=await new Promise((resolve,reject)=>{processChild.stdout.once('data',chunk=>resolve(Number(chunk.toString().trim())));processChild.once('exit',code=>reject(new Error('Restart exited '+code)));});
     assert.equal(restartedPort,port);
     await page.setViewportSize({width:1440,height:960});await page.reload();await page.waitForSelector('[data-folder]',{state:'attached'});
-    await page.locator('#back').click();if(await page.locator('#clear-folder').isVisible())await page.locator('#clear-folder').click();
-    await page.getByRole('button',{name:'完成平方函数练习',exact:true}).click();await page.waitForSelector('.answer-input');
+    await page.locator('#back').click();while(await page.locator('#clear-folder').isVisible())await page.locator('#clear-folder').click();
+    await page.locator('[data-period="all"]').click();await page.getByRole('button',{name:/^完成平方函数练习/}).click();await page.waitForSelector('.answer-input');
     assert.match(await page.locator('.answer-input').inputValue(),/2×3=6/);
     assert.match(await page.locator('#conversation').textContent(),/作答反馈已登记/);
     const recovered=await api('/api/state');assert.ok(recovered.tasks.find(task=>task.id===exampleTask.id).done);assert.ok(recovered.files.find(file=>file.id===oldPdf.id));
@@ -139,8 +146,7 @@ const {chromium}=require(process.env.STUDY_UI_PLAYWRIGHT_MODULE || path.join(pac
     const result=JSON.parse(execFileSync('python3',['-c',`import sqlite3,json,sys; c=sqlite3.connect(sys.argv[1]); print(json.dumps({'assessments':c.execute('SELECT COUNT(*) FROM assessment_attempts').fetchone()[0],'flows':c.execute('SELECT COUNT(*) FROM flow_active WHERE flow="memory"').fetchone()[0],'answers':c.execute('SELECT COUNT(*) FROM desktop_answers').fetchone()[0]}))`,path.join(data,'.study-system/data/task_memory.sqlite3')],{encoding:'utf8'}));
     assert.equal(result.assessments,1);assert.equal(result.flows,1);assert.ok(result.answers>=2);
     // Third perspective: close a semester, start another, and recover the old one.
-    await page.locator('#back').click();if(await page.locator('#clear-folder').isVisible())await page.locator('#clear-folder').click();
-    await page.locator('[data-folder="'+folder.id+'"]').click();
+    await page.locator('#back').click();while(await page.locator('#clear-folder').isVisible())await page.locator('#clear-folder').click();
     const removable=(await api('/api/state')).files.find(f=>f.name==='新文件.md');
     await page.locator('[data-id="'+removable.id+'"] .file-check').check();
     page.once('dialog',dialog=>dialog.accept());await page.locator('#remove-files').click();
@@ -163,8 +169,24 @@ const {chromium}=require(process.env.STUDY_UI_PLAYWRIGHT_MODULE || path.join(pac
     await page.locator('#semester-menu').click();await page.locator('#semester-action').selectOption('reopen');await page.locator('#picker-confirm').click();
     await page.waitForFunction(()=>document.querySelector('#semester-menu').textContent==='当前学期');
     assert.ok(await page.locator('#prompt').isEnabled());
+    // A normal desk with several courses, an inbox, and dozens of daily tasks.
+    await page.locator('#back').click();while(await page.locator('#clear-folder').isVisible())await page.locator('#clear-folder').click();
+    for(const [code,title] of [['PHYS','大学物理'],['LINALG','线性代数'],['CS','计算机基础']]){
+      await op('course',{code,name:title});
+      for(let number=1;number<=8;number++)await op('task',{title:`${title} · 练习 ${number}`,course:code});
+    }
+    await page.reload();await page.waitForSelector('.task-group');
+    assert.ok(await page.locator('.task-group').count()>=3);
+    assert.ok(await page.locator('#tasks').evaluate(element=>element.scrollHeight>element.clientHeight));
+    await page.locator('#task-course').selectOption('phys');assert.equal(await page.locator('.task-row:not(.done)').count(),8);
+    await page.locator('#task-course').selectOption('');
+    await page.locator('.task-group').first().locator('summary').click();assert.equal(await page.locator('.task-group').first().evaluate(element=>element.open),false);
+    await page.locator('[data-action="organize"]').click();assert.match(await page.locator('#contexts').textContent(),/新文件/);
+    if(process.env.STUDY_UI_CAPTURE)await page.screenshot({path:path.join(root,'ui/previews/desktop.png')});
+    await page.setViewportSize({width:390,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+    if(process.env.STUDY_UI_CAPTURE)await page.screenshot({path:path.join(root,'ui/previews/mobile.png')});
     assert.deepEqual(errors,[]);
     console.log('Cloud browser end-to-end passed: persistent files/tasks/chat/answers; SDK tools and workflow change; feedback ledger; actual Chinese PDF, page images/quotes, failure recovery and stop; scoped memory, semester change/archive/reopen and file removal/restore. Scripted model only.');
-  } catch(error){const {execFileSync}=require('node:child_process');const events=execFileSync('python3',['-c',`import pathlib,json,sys; print(json.dumps([json.loads(line)['data'] for p in pathlib.Path(sys.argv[1]).rglob('*.jsonl') for line in p.read_text().splitlines() if json.loads(line).get('type')=='turn/end'],ensure_ascii=False))`,data],{encoding:'utf8'});throw new Error(error.stack+'\nSDK outcomes: '+events+'\nServer: '+diagnostics);}
+  } catch(error){if(process.env.STUDY_UI_CAPTURE&&browser){const pages=browser.contexts()[0]?.pages();if(pages?.length)await pages[0].screenshot({path:'/workspace/study-blue-failure.png'});}const {execFileSync}=require('node:child_process');const events=execFileSync('python3',['-c',`import pathlib,json,sys; print(json.dumps([json.loads(line)['data'] for p in pathlib.Path(sys.argv[1]).rglob('*.jsonl') for line in p.read_text().splitlines() if json.loads(line).get('type')=='turn/end'],ensure_ascii=False))`,data],{encoding:'utf8'});throw new Error(error.stack+'\nSDK outcomes: '+events+'\nServer: '+diagnostics);}
   finally {await browser?.close();processChild.kill('SIGTERM');await new Promise(resolve=>processChild.once('exit',resolve));fs.rmSync(data,{recursive:true,force:true});}
 })().catch(error=>{console.error(error);process.exit(1);});

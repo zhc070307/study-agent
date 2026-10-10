@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#f9f9f9">
+  <meta name="theme-color" content="#eef5ff">
   <title>Study Agent · 学习桌</title>
   <link rel="stylesheet" href="lib/pdfjs/pdf_viewer.css">
   <link rel="stylesheet" href="styles.css">
@@ -37,13 +37,17 @@
         <div id="file-actions" hidden><div id="reader-modes" role="group" aria-label="Markdown 显示方式" hidden><button data-mode="preview">预览</button><button data-mode="source">源码</button></div><button id="edit-file" class="text-button" hidden>编辑</button><a id="download-file" class="text-button" download>下载</a><button id="history-file" class="text-button" hidden>历史</button><button id="transcribe-file" class="text-button" hidden>转写</button><span id="transcribe-status" hidden></span><button id="compile-file" class="text-button" hidden>编译 PDF</button><button id="view-pdf" class="text-button" hidden>PDF</button><button id="compare" class="icon-button" aria-label="并排查看" title="并排查看"> <svg><use href="#i-split"/></svg></button><button id="rename" class="icon-button" aria-label="重命名当前文件" title="重命名"><svg><use href="#i-rename"/></svg></button></div>
       </nav>
       <div id="desktop">
-        <div class="folder-toolbar"><button id="clear-folder" class="text-button" hidden><svg><use href="#i-back"/></svg>文件夹</button><span id="files-heading"></span><button id="file-trash" class="text-button" hidden>已移除</button><button id="new-folder" class="icon-button" aria-label="新建文件夹" title="新建文件夹"><svg><use href="#i-plus"/></svg></button><button id="add-files" class="button subtle" hidden>添加文件</button><input id="file-input" type="file" multiple hidden></div>
+        <section class="files-panel" aria-label="课程文件">
+        <div class="folder-toolbar"><button id="clear-folder" class="text-button" hidden><svg><use href="#i-back"/></svg>上一级</button><span id="files-heading"></span><button id="file-trash" class="text-button" hidden>已移除</button><button id="new-folder" class="icon-button" aria-label="新建文件夹" title="新建文件夹"><svg><use href="#i-plus"/></svg></button><button id="add-files" class="button subtle" hidden>添加文件</button><input id="file-input" type="file" multiple hidden></div>
         <div id="folders" class="folders" aria-label="文件夹"></div>
-        <section id="task-list" class="task-list" aria-label="任务清单"><h2>任务清单 <button id="new-task" class="icon-button" aria-label="新建任务">＋</button></h2><div id="tasks"></div></section>
+
         <div class="selection-bar" id="selection-bar" hidden><span id="selection-count"></span><button class="text-button" id="move-files">移动到文件夹</button><button class="text-button" id="move-first">放到最前</button><button class="text-button" id="remove-files">移除</button><button class="text-button" id="clear-selection">取消选择</button></div>
+        <div id="inbox-heading" class="inbox-heading" hidden><span>待整理</span><small>新文件先放这里，再请助理归类</small></div>
         <div class="file-grid" id="files"></div>
         <div class="empty-state" id="empty" hidden><svg><use href="#i-file"/></svg><h3>这里还没有文件</h3><p>添加文件，或拖入材料。</p></div>
 
+        </section>
+        <section id="task-list" class="task-list" aria-label="任务清单"><h2><span>任务清单 <small id="task-count"></small></span><button id="new-task" class="icon-button" aria-label="新建任务">＋</button></h2><div class="task-filters"><div id="task-period" class="segmented" role="group" aria-label="任务时间"><button data-period="today" class="active">今天</button><button data-period="next">接下来</button><button data-period="all">全部</button></div><select id="task-course" aria-label="按课程筛选任务"><option value="">全部课程</option></select></div><div id="tasks"></div></section>
       </div>
       <div id="task" hidden>
         <div class="document-heading"><h1 id="document-title" class="sr-only"></h1><p id="document-meta"></p></div>

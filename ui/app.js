@@ -7,6 +7,8 @@ const icon = name => `<svg aria-hidden="true"><use href="#i-${name}"/></svg>`;
 const files = [];
 const folders = [];
 const tasks = [];
+let courses=[],taskPeriod="today",taskCourse="";
+const collapsedTaskGroups=new Set();
 let transcription={installed:false,jobs:[]};
 let semesterId=null,semesterList=null,readonly=false,removedFiles=[];
 let serverVersion = -1, applying = false, metadataTimer, busy = false, sending = false;
@@ -52,7 +54,7 @@ async function refresh(force=false) {
   const old = new Map(files.map(file=>[file.id,file]));
   files.splice(0,files.length,...data.files.map(file=>({...old.get(file.id),...file})));
   folders.splice(0,folders.length,...data.folders);
-  tasks.splice(0,tasks.length,...data.tasks);
+  tasks.splice(0,tasks.length,...data.tasks);courses=data.courses||[];
   state.messages=new Map(Object.entries(data.messages));
   for(const [id,text] of Object.entries(data.answers)) if(!state.answers.has(id)) state.answers.set(id,text);
   const firstLoad=serverVersion<0;
@@ -94,8 +96,23 @@ function markdownPreview(text) {
     ALLOWED_ATTR:['href','title'], SANITIZE_NAMED_PROPS:true
   });
 }
+function localDay(){const date=new Date();return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;}
+function taskDay(value){if(!value)return null;if(value.length===10)return value;const date=new Date(value);return Number.isNaN(date.getTime())?null:`${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;}
 function renderTasks() {
-  $('#tasks').innerHTML = tasks.map(task => `<div class="task-row ${task.done ? 'done' : ''}"><input type="checkbox" data-task="${esc(task.id)}" aria-label="完成任务 ${esc(task.title)}" ${task.done ? 'checked' : ''} ${readonly || task.actor==='agent' ? 'disabled' : ''}><button data-task-id="${esc(task.id)}" data-task-open="${esc(task.file || '')}">${esc(task.title)}</button><span>${esc(getFile(task.file)?.name || '')}</span></div>`).join('');
+  const today=localDay();
+  const available=tasks.filter(task=>task.actor==='student'&&(!taskCourse||task.course===taskCourse));
+  const pending=available.filter(task=>!task.done).filter(task=>taskPeriod==='all'||(taskPeriod==='today'?(task.scheduled_date===today||taskDay(task.due_at)&&taskDay(task.due_at)<=today):(task.scheduled_date!==today&&!(taskDay(task.due_at)&&taskDay(task.due_at)<=today)&&(task.scheduled_date>today||taskDay(task.due_at)>today))));
+  const completed=available.filter(task=>task.done);
+  $('#task-count').textContent=`${pending.length} 项`;
+  const select=$('#task-course');const focused=document.activeElement===select;
+  if(!focused){select.innerHTML='<option value="">全部课程</option>'+courses.map(course=>`<option value="${esc(course.id)}">${esc(course.name)}</option>`).join('');select.value=taskCourse;}
+  $$('#task-period button').forEach(button=>{button.classList.toggle('active',button.dataset.period===taskPeriod);button.setAttribute('aria-pressed',String(button.dataset.period===taskPeriod));});
+  const row=task=>{const due=taskDay(task.due_at),overdue=due&&due<today;const date=due?(overdue?'已过截止 · ': '截止 · ')+due.slice(5):task.scheduled_date&&task.scheduled_date!==today?'安排 · '+task.scheduled_date.slice(5):'';return `<div class="task-row ${task.done?'done':''}"><input type="checkbox" data-task="${esc(task.id)}" aria-label="完成任务 ${esc(task.title)}" ${task.done?'checked':''} ${readonly?'disabled':''}><button data-task-id="${esc(task.id)}" data-task-open="${esc(task.file||'')}"><strong>${esc(task.title)}</strong><small>${esc(getFile(task.file)?.name||'')}${date?' · '+esc(date):''}</small></button>${overdue&&!task.done?'<span class="overdue">待处理</span>':''}</div>`;};
+  const groups=new Map();for(const task of pending){const key=task.course||'general';if(!groups.has(key))groups.set(key,[]);groups.get(key).push(task);}
+  let content=[...groups].map(([key,items])=>`<details class="task-group" data-task-group="${esc(key)}" ${collapsedTaskGroups.has(key)?'':'open'}><summary><span>${esc(courses.find(course=>course.id===key)?.name||'其他事项')}</span><small>${items.length}</small></summary>${items.map(row).join('')}</details>`).join('');
+  if(!pending.length)content=`<p class="task-empty">${taskPeriod==='today'?'今天没有已安排的任务':taskPeriod==='next'?'没有已安排的后续任务':'没有未完成任务'}</p>`;
+  if(completed.length)content+=`<details class="completed-tasks" data-task-group="completed" ${collapsedTaskGroups.has('completed-open')?'open':''}><summary>已完成 <small>${completed.length}</small></summary>${completed.map(row).join('')}</details>`;
+  $('#tasks').innerHTML=content;
 }
 const state = {folder:null, selected:new Set(), contexts:new Set(), quote:null, active:null, compare:null, tabs:[], messages:new Map(), compositions:new Map(), scrolls:new Map(), answers:new Map(), deskScroll:0, nextId:1};
 let draggedId = null;
@@ -103,26 +120,32 @@ let toastTimer;
 let pickerCallback;
 const getFile = id => files.find(file => file.id === id);
 const channel = () => state.active || 'desktop';
-const visibleFiles = () => files.filter(file => !state.folder || (state.folder === 'unfiled' ? !file.folder : file.folder === state.folder));
+const visibleFiles = () => files.filter(file => !state.folder||state.folder==='unfiled'?!file.folder:file.folder===state.folder);
 function toast(message) { $('#toast').textContent = message; $('#toast').hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => {$('#toast').hidden = true;}, 3600); }
+function folderPath(id){const names=[],seen=new Set();while(id){if(seen.has(id))break;seen.add(id);const folder=folders.find(item=>item.id===id);if(!folder){if(id==='unfiled')names.unshift('未整理');break;}names.unshift(folder.name);id=folder.parent;}return names.join(' / ');}
+function insideFolder(id,parent){const seen=new Set();while(id&&!seen.has(id)){if(id===parent)return true;seen.add(id);id=folders.find(folder=>folder.id===id)?.parent;}return false;}
 function renderDesktop() {
   persistMetadata();
   const atRoot = !state.folder;
-  const rootFolders = [...folders, {id:'unfiled', name:'未整理'}];
-  $('#folders').hidden = !atRoot;
-  $('#task-list').hidden = !atRoot;
+  const children=folders.filter(folder=>(folder.parent||null)===(state.folder==='unfiled'? '__none__':state.folder));
+
+  $('#folders').hidden=!children.length;
+  $('#task-list').hidden=!atRoot;
   renderTasks();
-  $('#folders').innerHTML = rootFolders.map(folder => `<button class="folder" data-folder="${esc(folder.id)}" aria-label="${esc(folder.name)}">${icon('folder')}<span><strong>${esc(folder.name)}</strong><small>${files.filter(file => folder.id === 'unfiled' ? !file.folder : file.folder === folder.id).length} 份文件</small></span></button>`).join('');
-  $('#files-heading').textContent = atRoot ? '' : rootFolders.find(f => f.id === state.folder).name;
-  $('#clear-folder').hidden = atRoot;
-  $('#add-files').hidden = atRoot;
-  $('#new-folder').hidden = !atRoot;
+  $('#folders').innerHTML=children.map(folder=>`<button class="folder" data-folder="${esc(folder.id)}" aria-label="${esc(folder.name)}">${icon('folder')}<span><strong>${esc(folder.name)}</strong><small>${files.filter(file=>folder.id==='unfiled'?!file.folder:insideFolder(file.folder,folder.id)).length} 份文件</small></span></button>`).join('');
+  $('#files-heading').textContent=atRoot?'课程':folderPath(state.folder);
+  $('#clear-folder').hidden=atRoot;
+  $('#add-files').hidden=false;
+  $('#new-folder').hidden=state.folder==='unfiled';
+  $('#new-folder').title=atRoot?'新建课程':'新建文件夹';
+  $('#new-folder').setAttribute('aria-label',atRoot?'新建课程':'新建文件夹');
   const visible = visibleFiles();
-  $('#files').hidden = atRoot;
+  $('#files').hidden=false;
+  $('#inbox-heading').hidden=!atRoot||!visible.length;
   $('#files').classList.add('list');
   $('#files').innerHTML = visible.map(file => `<article class="file-card ${state.selected.has(file.id) ? 'selected' : ''}" draggable="true" data-id="${esc(file.id)}"><input type="checkbox" class="file-check" aria-label="选择 ${esc(file.name)}" ${state.selected.has(file.id) ? 'checked' : ''}><button class="file-open" aria-label="打开 ${esc(file.name)}">${icon('file')}<span>${esc(file.name)}</span></button></article>`).join('');
-  $('#empty').hidden = atRoot || visible.length !== 0;
-  $('#selection-bar').hidden = atRoot || state.selected.size === 0;
+  $('#empty').hidden=visible.length!==0||(atRoot&&children.length>0);
+  $('#selection-bar').hidden=state.selected.size===0;
   $('#selection-count').textContent = `已选择 ${state.selected.size} 份文件`;
 }
 function renderContexts() {
@@ -239,7 +262,7 @@ function renderTask() {
   disposePdfReaders();
   const file = getFile(state.active);
   $('#document-title').textContent = file.name;
-  $('#document-meta').textContent = `${folders.find(folder=>folder.id===file.folder)?.name || '未整理'} / ${file.name}`;
+  $('#document-meta').textContent = `${folderPath(file.folder)||'未整理'} / ${file.name}`;
   renderTabs();
   const sourceIds = state.compare ? [state.active, state.compare] : [state.active];
   const ids=sourceIds.map(id=>{const file=getFile(id);return file.mode==='pdf'&&file.pdf?file.pdf.file:id;});
@@ -266,15 +289,19 @@ function showPicker(title, html, callback) {
 }
 function filePicker(title, callback, exclude = null, multiple = false) {
   const candidates = files.filter(file => file.id !== exclude);
-  showPicker(title, candidates.map(file => `<label class="picker-option"><input type="${multiple ? 'checkbox' : 'radio'}" name="file" value="${esc(file.id)}" ${multiple && state.contexts.has(file.id) ? 'checked' : ''}><span>${esc(file.name)}<small> · ${esc(file.course || '未归属')}</small></span></label>`).join(''), () => {const ids = $$('#picker-body input:checked').map(input => input.value); if (!ids.length) {toast('请选择文件'); return;} callback(multiple ? ids : ids[0]);});
+  showPicker(title, candidates.map(file => `<label class="picker-option"><input type="${multiple ? 'checkbox' : 'radio'}" name="file" value="${esc(file.id)}" ${multiple && state.contexts.has(file.id) ? 'checked' : ''}><span>${esc(file.name)}<small> · ${esc(folderPath(file.folder)||'未整理')}</small></span></label>`).join(''), () => {const ids = $$('#picker-body input:checked').map(input => input.value); if (!ids.length) {toast('请选择文件'); return;} callback(multiple ? ids : ids[0]);});
 }
 $('#picker').addEventListener('close', () => {if ($('#picker').returnValue === 'confirm' && pickerCallback) pickerCallback(); pickerCallback = null;});
 function createFolder() {
-  showPicker('新建文件夹', '<label><span class="sr-only">文件夹名称</span><input class="picker-input" id="folder-name" maxlength="60" placeholder="给它一个名字" required></label>', () => {const name = $('#folder-name').value.trim(); if (!name) return; folders.push({id:requestId(), name}); renderDesktop(); toast('已新建文件夹');});
+  const parent=state.folder;
+  showPicker(parent?'新建文件夹':'新建课程','<label><span class="sr-only">名称</span><input class="picker-input" id="folder-name" maxlength="60" placeholder="给它一个名字" required></label>',async()=>{
+    const name=$('#folder-name').value.trim();if(!name)return;
+    try{await operation(parent?'folder':'course',parent?{name,parent}:{name});await refresh(true);toast(parent?'已新建文件夹':'已建立课程和分类文件夹');}catch(error){toast(error.message);}
+  });
 }
 function moveFiles() {
   if (!state.selected.size) return;
-  showPicker('把文件放到哪里？', '<p class="picker-note">移动后仍保留文件身份与关联。</p>' + [{id:'', name:'桌面'}, ...folders].map(folder => `<label class="picker-option"><input type="radio" name="folder" value="${esc(folder.id)}"><span>${esc(folder.name)}</span></label>`).join(''), () => {const choice = $('#picker-body input:checked'); if (!choice) {toast('请选择位置'); return;} for (const id of state.selected) getFile(id).folder = choice.value || null; renderDesktop(); toast('已移动文件，可再次选择后移回');});
+  showPicker('把文件放到哪里？', '<p class="picker-note">移动后仍保留文件身份与关联。</p>' + [{id:'', name:'未整理'}, ...folders.map(folder=>({...folder,name:folderPath(folder.id)}))].map(folder => `<label class="picker-option"><input type="radio" name="folder" value="${esc(folder.id)}"><span>${esc(folder.name)}</span></label>`).join(''), () => {const choice = $('#picker-body input:checked'); if (!choice) {toast('请选择位置'); return;} for (const id of state.selected) getFile(id).folder = choice.value || null; renderDesktop(); toast('已移动文件，可再次选择后移回');});
 }
 function refsText() {
   const names = [...state.contexts].map(id => getFile(id)?.name).filter(Boolean);
@@ -283,6 +310,7 @@ function refsText() {
 }
 function quickAction(action) {
   collapseAssistant(false);
+  if(action==='organize'&&!state.contexts.size){state.contexts=new Set(files.filter(file=>!file.folder).map(file=>file.id));renderContexts();}
   if (!state.contexts.size && action !== 'question') {toast('先选择或关联文件');return;}
   $('#prompt').value=action==='organize'?'请读取这些文件，并按内容整理到合适的文件夹。':action==='practice'?'请根据这些材料组织练习，保存题目，并加入任务清单。':$('#prompt').value;
   $('#prompt').focus();
@@ -301,12 +329,15 @@ $('#chat-form').addEventListener('submit', event => {event.preventDefault(); sen
 $('#prompt').addEventListener('keydown', event => {if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {event.preventDefault(); sendMessage();}});
 $('#home').addEventListener('click', event => {event.preventDefault(); backToDesktop();});
 $('#back').addEventListener('click', backToDesktop);
+$('#task-period').addEventListener('click',event=>{const button=event.target.closest('[data-period]');if(button){taskPeriod=button.dataset.period;renderTasks();}});
+$('#task-course').addEventListener('change',event=>{taskCourse=event.target.value;renderTasks();});
+$('#tasks').addEventListener('toggle',event=>{const key=event.target.dataset.taskGroup;if(!key)return;if(key==='completed'){if(event.target.open)collapsedTaskGroups.add('completed-open');else collapsedTaskGroups.delete('completed-open');}else if(event.target.open)collapsedTaskGroups.delete(key);else collapsedTaskGroups.add(key);},true);
 $('#tasks').addEventListener('change',async event=>{const input=event.target.closest('[data-task]');if(!input)return;try{await operation('check_task',{task:input.dataset.task,done:input.checked});await refresh();}catch(error){toast(error.message);await refresh(true);}});
 $('#tasks').addEventListener('click',event=>{const button=event.target.closest('[data-task-open]');if(button?.dataset.taskOpen)openFile(button.dataset.taskOpen);else if(button){collapseAssistant(false);$('#prompt').value='关于任务“'+tasks.find(t=>t.id===button.dataset.taskId).title+'”，';$('#prompt').focus();}});
 $('#reader-modes').addEventListener('click',event=>{const button=event.target.closest('[data-mode]');if(button){saveScroll();getFile(state.active).mode=button.dataset.mode;renderTask();}});
 $('.workspace').addEventListener('scroll',()=>{$('#quote-bar').hidden=true;clearTimeout(draftTimer);draftTimer=setTimeout(persistDraft,500);},{passive:true});
 $('#folders').addEventListener('click', event => {const button = event.target.closest('[data-folder]'); if (!button) return; state.folder = state.folder === button.dataset.folder ? null : button.dataset.folder; renderDesktop();persistLayout();});
-$('#clear-folder').addEventListener('click', () => {state.folder = null; renderDesktop();persistLayout();});
+$('#clear-folder').addEventListener('click', () => {state.folder=folders.find(folder=>folder.id===state.folder)?.parent||null;renderDesktop();persistLayout();});
 $('#new-folder').addEventListener('click', createFolder);
 $('#move-files').addEventListener('click', moveFiles);
 $('#move-first').addEventListener('click', () => {const selected = files.filter(file => state.selected.has(file.id)); const rest = files.filter(file => !state.selected.has(file.id)); files.splice(0, files.length, ...selected, ...rest); renderDesktop(); toast('所选文件已放到最前');});
@@ -365,10 +396,10 @@ async function importFiles(incoming) {
     if(raw.size>limit*1024*1024){toast(`${raw.name} 超过 ${limit} MB`);continue;}
     try {
       const data=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result.split(',')[1]);reader.onerror=reject;reader.readAsDataURL(raw);});
-      await operation('create',{name:raw.name,mime:raw.type,data,folder:state.folder==='unfiled'?null:state.folder});saved++;
+      await operation('create',{name:raw.name,mime:raw.type,data,folder:null});saved++;
     }catch(error){toast(error.message);}
   }
-  await refresh(true);if(saved)toast('已保存 '+saved+' 份文件');
+  await refresh(true);if(saved){state.folder=null;backToDesktop();toast('已放到桌面待整理 · '+saved+' 份文件');}
 }
 $('#file-input').addEventListener('change', async event => {await importFiles(event.target.files); event.target.value = '';});
 $('.workspace').addEventListener('dragover', event => {if (event.dataTransfer.types.includes('Files')) event.preventDefault();});

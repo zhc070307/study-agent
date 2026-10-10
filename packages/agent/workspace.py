@@ -21,6 +21,7 @@ from semesters import Semesters
 
 MAX_FILE = 20 * 1024 * 1024
 MAX_AUDIO = 200 * 1024 * 1024
+CATEGORIES={"materials":"课程资料","notes":"笔记","practice":"练习","assignments":"作业"}
 
 def encoded(value):
     return json.dumps(value, ensure_ascii=False, separators=(',', ':'))
@@ -57,6 +58,7 @@ class Workspace:
           CREATE TABLE IF NOT EXISTS desktop_preparations (id TEXT PRIMARY KEY, value TEXT NOT NULL);
           CREATE TABLE IF NOT EXISTS desktop_views (compile TEXT NOT NULL, page INTEGER NOT NULL, PRIMARY KEY(compile,page));
         ''')
+        self.migrate_folders()
         self.publication_warnings=[] if read_only(self.root) else self.sync_publications()
 
     def sync_publications(self):
@@ -135,14 +137,15 @@ class Workspace:
         links = dict(self.conn.execute('SELECT task,file FROM desktop_task_files'))
         paths={key:f['id'] for f in files for key in ([f.get('course_path'),str(self.root/f['course_path'])] if f.get('course_path') else [])}
         paths.update({'desktop:'+f['id']:f['id'] for f in files})
-        tasks = [dict(id=t.id, title=t.title, file=links.get(t.id) or paths.get(t.source), done=t.status=='completed', status=t.status, actor=t.actor, course=t.course_id) for t in self.tasks.list_tasks() if t.status in ('open','proposed','completed')]
+        placements={item.task_id:item for item in self.tasks.list_placements()}
+        tasks = [dict(id=t.id, title=t.title, file=links.get(t.id) or paths.get(t.source), done=t.status=='completed', status=t.status, actor=t.actor, course=t.course_id,due_at=t.due_at,scheduled_date=placements[t.id].scheduled_date if t.id in placements else None,placement=placements[t.id].kind if t.id in placements else None) for t in self.tasks.list_tasks() if t.status in ('open','proposed','completed')]
         messages = {}
         for row in self.conn.execute('SELECT channel,value FROM desktop_messages ORDER BY rowid'):
             messages.setdefault(row[0], []).append(json.loads(row[1]))
         answers = {}
         for row in self.conn.execute('SELECT file,value FROM desktop_answers ORDER BY rowid'):
             answers[row[0]] = json.loads(row[1])['text']
-        return dict(trash=trash,agreements=read_all(self.root),courses=[dict(r) for r in self.conn.execute('SELECT code,name FROM courses ORDER BY code')],warnings=self.publication_warnings,version=self.version(), files=files, folders=[dict(row) for row in self.conn.execute('SELECT * FROM desktop_folders ORDER BY rowid')], tasks=tasks, messages=messages, drafts={r[0]:json.loads(r[1]) for r in self.conn.execute('SELECT * FROM desktop_drafts')}, answers=answers)
+        return dict(trash=trash,agreements=read_all(self.root),courses=[dict(r) for r in self.conn.execute('SELECT id,code,name FROM courses ORDER BY code')],warnings=self.publication_warnings,version=self.version(), files=files, folders=[dict(row) for row in self.conn.execute('SELECT * FROM desktop_folders ORDER BY rowid')], tasks=tasks, messages=messages, drafts={r[0]:json.loads(r[1]) for r in self.conn.execute('SELECT * FROM desktop_drafts')}, answers=answers)
 
     def perform(self, action, args, operation=''):
         if action=='semester':
@@ -210,7 +213,7 @@ class Workspace:
     def mutate(self, action, args):
         if action=='course':
             import re
-            code=str(args.get('code','')).upper()
+            code=str(args.get('code') or 'C'+uid()[:12]).upper()
             if not re.fullmatch(r'[A-Z0-9][A-Z0-9_-]{0,39}',code):raise ValueError('课程内部标识无效')
             title=name(args['name'])
             existing=self.conn.execute('SELECT * FROM courses WHERE code=?',(code,)).fetchone()
@@ -218,8 +221,9 @@ class Workspace:
             if not existing:self.tasks.add_course(code,title)
             result=LearningService(self.conn).setup_course_context(self.root,code)
             identifier='course-'+code
-            self.conn.execute('INSERT OR IGNORE INTO desktop_folders VALUES (?,?)',(identifier,title))
-            return dict(result,folder=identifier)
+            self.course_folder(code)
+            categories={category:self.category_folder(code,category) for category in CATEGORIES}
+            return dict(result,folder=identifier,folders=categories)
         if action in ('remove_file','restore_file'):
             file=self.file(args['file'])
             if args.get('expected')!=file['sha256']:raise ValueError('文件已变化，请重新读取')
@@ -238,7 +242,8 @@ class Workspace:
             saved=self.conn.execute('SELECT * FROM desktop_publications WHERE path=?',(path,)).fetchone()
             if saved and saved['file']!=file['id']:raise ValueError('此位置已有其他文件')
             if not saved and target.exists():raise ValueError('此位置已有课程文件，请先读取并保留原件')
-            file.update(course=course['code'],course_path=path,organization_reason=args['reason'])
+            category=relative.parts[0] if relative.parts and relative.parts[0] in CATEGORIES else 'materials'
+            file.update(course=course['code'],folder=self.category_folder(course['code'],category),category=category,course_path=path,organization_reason=args['reason'])
             self.save_file(file)
             self.conn.execute('INSERT INTO desktop_publications VALUES (?,?,?,NULL) ON CONFLICT(path) DO UPDATE SET desired=excluded.desired',(path,file['id'],file['sha256']))
             return self.public(file)
@@ -256,7 +261,7 @@ class Workspace:
             mime = args.get('mime') or mimetypes.guess_type(filename)[0] or 'application/octet-stream'
             if Path(filename).suffix.lower() == '.tex': mime = 'text/x-tex'
             kind = args.get('kind', 'upload')
-            if kind not in ('text','upload','practice','pdf'): raise ValueError('未知阅览方式')
+            if kind not in ('text','upload','note','practice','pdf'): raise ValueError('未知阅览方式')
             file = dict(id=uid(), name=filename, mime=mime, kind=kind, course=args.get('course') or None, folder=args.get('folder') or None, sha256=self.blob(content,MAX_AUDIO if mime.startswith('audio/') else MAX_FILE))
             self.check_folder(file['folder'])
             for source in args.get('sources',[]): self.file(source)
@@ -267,6 +272,7 @@ class Workspace:
             if args.get('preparation'):
                 if not self.conn.execute('SELECT 1 FROM desktop_preparations WHERE id=?',(args['preparation'],)).fetchone():raise ValueError('制作依据不存在')
                 file['preparation']=args['preparation']
+            self.place_file(file,args)
             self.save_file(file)
             return self.public(file)
         if action in ('write', 'restore'):
@@ -286,23 +292,23 @@ class Workspace:
         if action == 'folder':
             identifier = args.get('id') or uid()
             if not isinstance(identifier,str) or identifier=='unfiled' or len(identifier)>100:raise ValueError('文件夹身份无效')
-            self.conn.execute('INSERT OR REPLACE INTO desktop_folders VALUES (?,?)', (identifier, name(args['name'])))
-            return {'id':identifier, 'name':name(args['name'])}
+            folder={'id':identifier,'name':name(args['name']),'parent':args.get('parent'),'category':args.get('category')}
+            self.save_folder(folder)
+            return dict(self.conn.execute('SELECT * FROM desktop_folders WHERE id=?',(identifier,)).fetchone())
         if action == 'metadata':
             if args.get('expected') != self.version(): raise ValueError('桌面已更新，请刷新后重试')
-            for folder in args.get('folders',[]):
-                if not isinstance(folder['id'],str) or folder['id']=='unfiled' or len(folder['id'])>100:raise ValueError('文件夹身份无效')
-                self.conn.execute('INSERT OR REPLACE INTO desktop_folders VALUES (?,?)', (folder['id'], name(folder['name'])))
+            for folder in args.get('folders',[]):self.save_folder(folder)
             for patch in args.get('files',[]):
                 file = self.file(patch['id'])
                 file.update({key:patch[key] for key in ('name','folder','order') if key in patch})
                 file['name'] = name(file['name'])
                 self.check_folder(file.get('folder'))
+                self.place_file(file,{'folder':file.get('folder')},moving=True)
                 self.save_file(file)
             return {'saved':True}
         if action == 'task':
             file = self.file(args['file']) if args.get('file') else None
-            task = self.tasks.create_task(name(args['title']), course=args.get('course'), actor='student', status='open', source='desktop:'+file['id'] if file else None)
+            task = self.tasks.create_task(name(args['title']), course=args.get('course') or (file.get('course') if file else None), actor='student', status='open', source='desktop:'+file['id'] if file else None)
             self.tasks.set_placement(task.id, kind='scheduled', scheduled_date=self.tasks.clock.today().isoformat(), priority='if_time')
             if file: self.conn.execute('INSERT INTO desktop_task_files VALUES (?,?)',(task.id,file['id']))
             return dataclass_dict(task)
@@ -326,6 +332,100 @@ class Workspace:
         if action == 'review':
             return self.review(args)
         raise ValueError('未知桌面操作：'+action)
+
+    def migrate_folders(self):
+        columns={row['name'] for row in self.conn.execute('PRAGMA table_info(desktop_folders)')}
+        if 'parent' in columns:return
+        with db.atomic(self.conn,bump_revision=False):
+            for column in ('parent','course','category'):self.conn.execute('ALTER TABLE desktop_folders ADD COLUMN '+column+' TEXT')
+            for row in self.conn.execute('SELECT code FROM courses').fetchall():self.course_folder(row['code'])
+            # Use recorded purpose/course only; filenames do not establish a course.
+            for row in self.conn.execute('SELECT value FROM desktop_files').fetchall():
+                file=json.loads(row[0])
+                if file.get('kind')=='practice' or file.get('preparation'):
+                    try:self.place_file(file,{},moving=True);self.save_file(file)
+                    except ValueError:pass
+            self.bump()
+
+    def course_folder(self,course):
+        row=self.tasks._resolve_course_row(course)
+        identifier='course-'+row['code']
+        self.conn.execute('INSERT INTO desktop_folders (id,name,parent,course,category) VALUES (?,?,NULL,?,NULL) ON CONFLICT(id) DO UPDATE SET course=excluded.course,parent=NULL',(identifier,row['name'],row['code']))
+        return identifier
+
+    def category_folder(self,course,category):
+        if category not in CATEGORIES:raise ValueError('请选择明确的材料分类')
+        parent=self.course_folder(course)
+        existing=self.conn.execute('SELECT id FROM desktop_folders WHERE course=? AND category=? AND parent IS NOT NULL ORDER BY rowid LIMIT 1',(course,category)).fetchone()
+        if existing:return existing['id']
+        identifier=parent+'-'+category
+        self.conn.execute('INSERT INTO desktop_folders (id,name,parent,course,category) VALUES (?,?,?,?,?)',(identifier,CATEGORIES[category],parent,course,category))
+        return identifier
+
+    def folder_course(self,identifier):
+        seen=set()
+        while identifier:
+            if identifier in seen:raise ValueError('文件夹不能循环嵌套')
+            seen.add(identifier)
+            row=self.conn.execute('SELECT * FROM desktop_folders WHERE id=?',(identifier,)).fetchone()
+            if not row:raise ValueError('文件夹不存在')
+            if row['course']:return row['course']
+            identifier=row['parent']
+        return None
+
+    def save_folder(self,folder):
+        identifier=folder['id']
+        if not isinstance(identifier,str) or identifier=='unfiled' or len(identifier)>100:raise ValueError('文件夹身份无效')
+        existing=self.conn.execute('SELECT * FROM desktop_folders WHERE id=?',(identifier,)).fetchone()
+        parent=folder.get('parent',existing['parent'] if existing else None)
+        current=parent;seen={identifier}
+        while current:
+            if current in seen:raise ValueError('文件夹不能包含自身或其上级')
+            seen.add(current);row=self.conn.execute('SELECT * FROM desktop_folders WHERE id=?',(current,)).fetchone()
+            if not row:raise ValueError('上级文件夹不存在')
+            current=row['parent']
+        category=folder.get('category',existing['category'] if existing else None)
+        if category and category not in CATEGORIES:raise ValueError('文件夹用途无效')
+        if existing and existing['course'] and not existing['parent'] and parent:raise ValueError('课程文件夹应位于桌面')
+        course=self.folder_course(parent) if parent else existing['course'] if existing else None
+        if existing and course!=existing['course']:raise ValueError('跨课程整理请移动文件，保留原课程文件夹')
+        self.conn.execute('INSERT INTO desktop_folders (id,name,parent,course,category) VALUES (?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,parent=excluded.parent,course=excluded.course,category=excluded.category',(identifier,name(folder['name']),parent,course,category))
+
+    def place_file(self,file,args,moving=False):
+        preparation=None
+        if file.get('preparation'):
+            row=self.conn.execute('SELECT value FROM desktop_preparations WHERE id=?',(file['preparation'],)).fetchone()
+            if not row:raise ValueError('制作依据不存在')
+            preparation=json.loads(row[0])
+        category=args.get('category') or file.get('category') or ('practice' if file['kind']=='practice' else 'notes' if file['kind']=='note' or preparation and preparation['kind']=='note' else None)
+        course=args.get('course') or file.get('course') or (preparation or {}).get('course') or self.folder_course(file.get('folder'))
+        if category and not course:raise ValueError('请先明确这份成果属于哪门课，再保存到课程内的分类文件夹')
+        if moving and not category and args.get('folder'):
+            course=self.folder_course(args['folder']) or course
+        if course:
+            course=self.tasks._resolve_course_row(course)['code']
+            selected=file.get('folder');folder=self.conn.execute('SELECT * FROM desktop_folders WHERE id=?',(selected,)).fetchone() if selected else None
+            if category:
+                if folder and folder['course']==course and folder['parent']:
+                    if not moving and folder['category'] and folder['category']!=category:raise ValueError('成果用途与所选分类不符')
+                else:
+                    if moving and selected and self.folder_course(selected)!=course:raise ValueError('请将成果保存在所属课程的分类文件夹；跨课使用可以复制')
+                    file['folder']=self.category_folder(course,category)
+            elif not folder or not folder['parent']:
+                file['folder']=self.category_folder(course,'materials')
+            file['course']=course
+            if category:file['category']=category
+            if category and not moving:
+                self.register_publication(file,course+'/'+category+'/'+file['name'])
+
+    def register_publication(self,file,path):
+        relative=Path(path)
+        if relative.is_absolute() or '..' in relative.parts:raise ValueError('课程文件位置无效')
+        saved=self.conn.execute('SELECT file FROM desktop_publications WHERE path=?',(str(relative),)).fetchone()
+        if saved and saved['file']!=file['id']:raise ValueError('分类中已有同名成果，请先读取再修订，或使用不同名称')
+        if not saved and (self.root/relative).exists():raise ValueError('此位置已有原文件，请先核对，不能覆盖')
+        file['course_path']=str(relative)
+        self.conn.execute('INSERT INTO desktop_publications VALUES (?,?,?,NULL) ON CONFLICT(path) DO UPDATE SET desired=excluded.desired',(str(relative),file['id'],file['sha256']))
 
     def check_folder(self, identifier):
         if identifier and not self.conn.execute('SELECT 1 FROM desktop_folders WHERE id=?',(identifier,)).fetchone():
@@ -384,6 +484,9 @@ class Workspace:
                 record.update(ok=False,log='编译期间源码变化，保留原 PDF；请重新编译')
             if record['ok']:
                 pdf = dict(id=current.get('pdf',{}).get('file') or uid(),name=Path(current['name']).stem+'.pdf',mime='application/pdf',kind='pdf',course=current['course'],folder=current['folder'],sha256=record['sha256'],pages=record['pages'],sources=[file['id']],compile=identifier,accepted=False,session=file.get('session'))
+                if current.get('category'):
+                    pdf['category']=current['category']
+                    self.register_publication(pdf,current['course']+'/'+current['category']+'/'+pdf['name'])
                 self.save_file(pdf)
                 current['pdf'] = dict(file=pdf['id'],compile=identifier,source_sha256=file['sha256'],stale=False)
             current['compile_result'] = {k:v for k,v in record.items() if k!='work'}
@@ -391,6 +494,7 @@ class Workspace:
             self.conn.execute('INSERT INTO desktop_compiles VALUES (?,?,?)',(identifier,file['id'],encoded(record)))
             self.bump()
             if operation: self.conn.execute('INSERT INTO desktop_operations VALUES (?,?,?)',(operation,fingerprint,encoded(record)))
+        self.sync_publications()
         return record
 
     def page(self,args):
