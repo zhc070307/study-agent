@@ -9,9 +9,9 @@ validate_device()
 from local_transcribe.pipeline import Pipeline
 from local_transcribe.task_store import create_task, read_task, update_task
 
-directory=Path(sys.argv[1]);job=json.loads(Path(sys.argv[2]).read_text())
+directory=Path(sys.argv[1]);job=json.loads(Path(sys.argv[2]).read_text(encoding='utf-8'))
 marker=directory/'task-id'
-if marker.is_file(): identifier=marker.read_text().strip()
+if marker.is_file(): identifier=marker.read_text(encoding='utf-8').strip()
 else:
     task=create_task(Path(job['source']),directory/'output')
     identifier=task['id']

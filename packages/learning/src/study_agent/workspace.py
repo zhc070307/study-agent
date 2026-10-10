@@ -8,7 +8,7 @@ def workspace_config(start):
     for parent in (start, *start.parents):
         config = parent / '.study-workspace.json'
         if config.is_file():
-            data = json.loads(config.read_text())
+            data = json.loads(config.read_text(encoding='utf-8'))
             return parent, data
     return None
 

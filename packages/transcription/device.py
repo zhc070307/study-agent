@@ -26,7 +26,7 @@ def available_memory():
         values={line.split(':')[0]:int(line.split(':')[1].strip().rstrip('.')) for line in text.splitlines()[1:] if ':' in line}
         # Do not count compressed or active pages as immediately available.
         return page_size*sum(values.get(name,0) for name in ('Pages free','Pages inactive','Pages speculative'))
-    values={line.split(':')[0]:int(line.split()[1])*1024 for line in Path('/proc/meminfo').read_text().splitlines()}
+    values={line.split(':')[0]:int(line.split()[1])*1024 for line in Path('/proc/meminfo').read_text(encoding='utf-8').splitlines()}
     return values['MemAvailable']
 
 def detect():

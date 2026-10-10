@@ -89,7 +89,7 @@ class Runtime:
         if self.process and self.process.poll() is None: return
         self.temp = tempfile.TemporaryDirectory(prefix='study-web-')
         overlay = Path(self.temp.name)/'patch.json'
-        overlay.write_text(encoded(patch(self.root)+self.extra_patch))
+        overlay.write_text(encoded(patch(self.root)+self.extra_patch),encoding='utf-8')
         self.diagnostics = tempfile.TemporaryFile(mode='w+')
         self.process = subprocess.Popen(runtime_command('--patch',str(overlay)),cwd=PROJECT,env=dict(os.environ,DSH_HOME=str(self.root/'.harness'),PYTHONUTF8='1'),stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=self.diagnostics,text=True,encoding='utf-8',bufsize=1,start_new_session=True)
         threading.Thread(target=self.read,args=(self.process,),daemon=True).start()

@@ -202,7 +202,8 @@ class Textbooks:
         if not isinstance(query, str):
             raise ValueError('关键词必须是文字')
         # Literal words only: FTS operators and SQL are never inferred from user text.
-        terms = re.findall(r'[^\W_]+', query, flags=re.UNICODE)
+        cjk = r'\u3400-\u9fff\uf900-\ufaff\U00020000-\U0002fa1f'
+        terms = re.findall('[' + cjk + ']+|[^\\W_' + cjk + ']+', query, flags=re.UNICODE)
         if query.strip() and not terms:
             raise ValueError('请提供有效关键词')
         filters, values = ['p.sha256=?'], [self.file['sha256']]
@@ -244,7 +245,7 @@ class Textbooks:
         cjk_terms = [term for term in terms if re.search(r'[\u3400-\u9fff\uf900-\ufaff\U00020000-\U0002fa1f]', term)]
         word_terms = [term for term in terms if term not in cjk_terms]
         for term in cjk_terms:
-            filters.append('instr(p.text,?)>0')
+            filters.append("instr(replace(replace(replace(replace(p.text,char(13),''),char(10),''),char(9),''),' ',''),?)>0")
             values.append(term)
         if word_terms:
             table = 'textbook_fts JOIN textbook_pages p ON p.id=textbook_fts.rowid'

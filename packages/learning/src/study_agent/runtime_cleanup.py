@@ -48,7 +48,7 @@ def finish_work(root, work, artifact, receipt, trash_root=None):
 
 
 def _retire(root, marker, trash_root=None):
-    record = json.loads(marker.read_text())
+    record = json.loads(marker.read_text(encoding='utf-8'))
     work = marker.parent
     runtime = Path(root).resolve() / '.study-system/runtime'
     if not work.resolve().is_relative_to(runtime) or work.resolve() == runtime or work.resolve().is_relative_to(runtime / 'views'):
