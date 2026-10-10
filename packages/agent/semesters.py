@@ -143,13 +143,17 @@ class Semesters:
             if data['version']!=expected:raise ValueError('学期列表已变化，请重新打开后恢复备份')
             identifier=uuid.uuid4().hex
             target=self.root/'.semesters'/identifier
-            with zipfile.ZipFile(source) as archive:
+            try:archive=zipfile.ZipFile(source)
+            except zipfile.BadZipFile:raise ValueError('这不是有效的学期备份，请选择从本软件下载的 ZIP 备份') from None
+            with archive:
                 entries=archive.infolist()
                 if len(entries)>50000 or sum(entry.file_size for entry in entries)>50*1024**3:raise ValueError('备份内容过大，暂不能恢复')
                 if shutil.disk_usage(self.root).free<sum(entry.file_size for entry in entries)+1024**3:raise ValueError('学习存储空间不足，请先释放空间再恢复备份')
-                manifest_entry=archive.getinfo('semester.json')
+                try:manifest_entry=archive.getinfo('semester.json')
+                except KeyError:raise ValueError('这不是 Study Agent 的学期备份') from None
                 if manifest_entry.file_size>2*1024**2:raise ValueError('备份说明文件过大')
                 manifest=json.loads(archive.read('semester.json'))
+                if not isinstance(manifest,dict) or manifest.get('format')!=1:raise ValueError('备份格式暂不支持，请使用与备份匹配的应用版本')
                 title=str(manifest.get('name','')).strip()
                 if not title or len(title)>80:raise ValueError('备份中的学期名称无效')
                 seen=set()

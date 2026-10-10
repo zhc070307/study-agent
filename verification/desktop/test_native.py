@@ -127,7 +127,7 @@ class NativeTests(unittest.TestCase):
         for name in ('../escape','C:/escape','.settings/config.json'):
             output=io.BytesIO()
             with zipfile.ZipFile(output,'w') as archive:
-                archive.writestr('semester.json',json.dumps({'name':'恢复'}));archive.writestr(name,'bad')
+                archive.writestr('semester.json',json.dumps({'name':'恢复','format':1}));archive.writestr(name,'bad')
             output.seek(0)
             with self.assertRaises(ValueError):library.import_backup(output,0)
             self.assertEqual(len(library.load()['items']),1)
