@@ -259,7 +259,9 @@ class Store:
         shared=Store(library_root(self.root)/'.semesters/shared',inherit=False)
         try: learning_flows={r['flow']:shared.version(r['version']) for r in shared.conn.execute("SELECT flow,version FROM flow_active WHERE scope='*'")}
         finally:shared.conn.close()
-        result = {'agreements':read_all(self.root,args.get('course')), 'learning_flows':learning_flows, 'courses': courses, 'memory': memory, 'recovery_warnings': self.recovery_warnings,
+        from transcription import Transcription
+        transcription=Transcription(self.root).status()
+        result = {'transcription':transcription,'agreements':read_all(self.root,args.get('course')), 'learning_flows':learning_flows, 'courses': courses, 'memory': memory, 'recovery_warnings': self.recovery_warnings,
             'flows': {flow: self.active(flow, '*') for flow in json.loads((PROJECT / 'packages/agent/flows.json').read_text())}, 'guide': {
             'study_command': ['python3', str(PROJECT / 'study-agent'), 'service', '--data', str(self.root)],
             'standards': delivery.routes(),

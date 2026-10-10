@@ -7,6 +7,7 @@ cd "$project_root/packages/learning"
 PYTHONPATH=src python3 -m unittest discover -s tests -t . -q
 cd "$project_root"
 python3 -m unittest discover -s packages/agent/tests -q
+python3 -m unittest discover -s verification/transcription -p test_device.py -q
 python3 packages/agent/tests/profile_smoke.py
 python3 packages/agent/tests/profile_loop.py
 bridge_file=packages/runtime/modules/test-support/agent-loop-testkit/tests/study-agent-verification.spec.ts

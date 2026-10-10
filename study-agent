@@ -6,7 +6,9 @@ import sys
 
 PROJECT = Path(__file__).resolve().parent
 arguments = sys.argv[1:]
-command = arguments.pop(0) if arguments and arguments[0] in ('serve', 'web', 'service', 'setup', 'check') else 'serve'
+command = arguments.pop(0) if arguments and arguments[0] in ('serve', 'web', 'service', 'setup', 'check', 'doctor') else 'serve'
+if command == 'doctor':
+    raise SystemExit(subprocess.call([sys.executable, str(PROJECT / 'scripts/doctor.py')] + arguments))
 if command in ('setup', 'check'):
     raise SystemExit(subprocess.call(['bash', str(PROJECT / 'scripts' / (command + '.sh'))] + arguments))
 if command == 'web':

@@ -7,6 +7,7 @@ const icon = name => `<svg aria-hidden="true"><use href="#i-${name}"/></svg>`;
 const files = [];
 const folders = [];
 const tasks = [];
+let transcription={installed:false,jobs:[]};
 let semesterId=null,semesterList=null,readonly=false,removedFiles=[];
 let serverVersion = -1, applying = false, metadataTimer, busy = false, sending = false;
 let savedMetadata = '', syncChain = Promise.resolve();
@@ -35,11 +36,11 @@ function persistMetadata() {
 async function refresh(force=false) {
   const data = await api('/api/state');
   if(semesterId && semesterId!==data.semesters.active){location.reload();return;}
-  semesterList=data.semesters;semesterId=data.semesters.active;
+  semesterList=data.semesters;semesterId=data.semesters.active;transcription=data.transcription||{installed:false,jobs:[]};
   const semester=data.semesters.items.find(s=>s.id===semesterId);readonly=semester.status!=='open';
   $('#semester-menu').textContent=semester.name+(readonly?' · 已归档':'');
   removedFiles=data.trash||[];$('#file-trash').hidden=!removedFiles.length;
-  for(const element of $$('#new-folder,#new-task,#add-files,#remove-files,#move-files,#move-first,#rename,#edit-file,#compile-file,#prompt,.send-button,.quick-actions button'))element.disabled=readonly;
+  for(const element of $$('#new-folder,#new-task,#add-files,#remove-files,#move-files,#move-first,#rename,#edit-file,#compile-file,#transcribe-file,#prompt,.send-button,.quick-actions button'))element.disabled=readonly;
   for(const file of data.files){file.source+='?semester='+semesterId;file.url+='&semester='+semesterId;}
   busy=data.runtime.status==='running';
   if(data.warnings?.length)$('.prototype-note').textContent='课程文件有其他修改，已保留版本，待助理核对';
@@ -69,7 +70,8 @@ async function refresh(force=false) {
   if(firstLoad && data.drafts.__layout){const layout=data.drafts.__layout;state.tabs=(layout.tabs||[]).filter(id=>getFile(id));state.folder=folders.some(f=>f.id===layout.folder)||layout.folder==='unfiled'?layout.folder:null;if(layout.active && getFile(layout.active))openFile(layout.active);else renderDesktop();}
   applying=false;
 }
-function persistLayout(){if(readonly)return;api('/api/workspace',{action:'draft',args:{channel:'__layout',value:{active:state.active,tabs:state.tabs,folder:state.folder,deskScroll:state.deskScroll}}}).catch(()=>{});}
+let layoutChain=Promise.resolve();
+function persistLayout(){if(readonly)return;const value={active:state.active,tabs:[...state.tabs],folder:state.folder,deskScroll:state.deskScroll};layoutChain=layoutChain.then(()=>api('/api/workspace',{action:'draft',args:{channel:'__layout',value}})).catch(()=>{});}
 function persistDraft() {
   if(readonly)return;
   const key=channel();
@@ -211,6 +213,11 @@ function renderTabs() {
   if(current){$('#download-file').href=current.url;$('#download-file').download=current.name;}
   const markdown = current && formatFor(current) === 'markdown';
   const latex=current && formatFor(current)==='latex';
+  const audio=current?.mime.startsWith('audio/');
+  const transcriptionJob=transcription.jobs.find(job=>job.file===current?.id&&job.source_sha256===current.sha256);
+  $('#transcribe-file').hidden=!audio;$('#transcribe-status').hidden=!audio||!transcriptionJob;
+  $('#transcribe-file').textContent=transcriptionJob?.status==='running'?'停止转写':transcriptionJob?.status==='completed'?'打开原稿':'转写';
+  $('#transcribe-status').textContent=transcriptionJob?.message||'';
   $('#compile-file').hidden=!latex; $('#view-pdf').hidden=!latex || !current.pdf;
   $('#edit-file').hidden=!current || current.text===undefined;
   $('#history-file').hidden=!current || current.text===undefined;
@@ -298,8 +305,8 @@ $('#tasks').addEventListener('change',async event=>{const input=event.target.clo
 $('#tasks').addEventListener('click',event=>{const button=event.target.closest('[data-task-open]');if(button?.dataset.taskOpen)openFile(button.dataset.taskOpen);else if(button){collapseAssistant(false);$('#prompt').value='关于任务“'+tasks.find(t=>t.id===button.dataset.taskId).title+'”，';$('#prompt').focus();}});
 $('#reader-modes').addEventListener('click',event=>{const button=event.target.closest('[data-mode]');if(button){saveScroll();getFile(state.active).mode=button.dataset.mode;renderTask();}});
 $('.workspace').addEventListener('scroll',()=>{$('#quote-bar').hidden=true;clearTimeout(draftTimer);draftTimer=setTimeout(persistDraft,500);},{passive:true});
-$('#folders').addEventListener('click', event => {const button = event.target.closest('[data-folder]'); if (!button) return; state.folder = state.folder === button.dataset.folder ? null : button.dataset.folder; renderDesktop();});
-$('#clear-folder').addEventListener('click', () => {state.folder = null; renderDesktop();});
+$('#folders').addEventListener('click', event => {const button = event.target.closest('[data-folder]'); if (!button) return; state.folder = state.folder === button.dataset.folder ? null : button.dataset.folder; renderDesktop();persistLayout();});
+$('#clear-folder').addEventListener('click', () => {state.folder = null; renderDesktop();persistLayout();});
 $('#new-folder').addEventListener('click', createFolder);
 $('#move-files').addEventListener('click', moveFiles);
 $('#move-first').addEventListener('click', () => {const selected = files.filter(file => state.selected.has(file.id)); const rest = files.filter(file => !state.selected.has(file.id)); files.splice(0, files.length, ...selected, ...rest); renderDesktop(); toast('所选文件已放到最前');});
@@ -354,7 +361,8 @@ $('#add-files').addEventListener('click', () => $('#file-input').click());
 async function importFiles(incoming) {
   let saved=0;
   for (const raw of incoming) {
-    if(raw.size>20*1024*1024){toast(`${raw.name} 超过 20 MB`);continue;}
+    const limit=raw.type.startsWith('audio/')?200:20;
+    if(raw.size>limit*1024*1024){toast(`${raw.name} 超过 ${limit} MB`);continue;}
     try {
       const data=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result.split(',')[1]);reader.onerror=reject;reader.readAsDataURL(raw);});
       await operation('create',{name:raw.name,mime:raw.type,data,folder:state.folder==='unfiled'?null:state.folder});saved++;
@@ -380,6 +388,23 @@ let draftTimer;
 $('#prompt').addEventListener('input',()=>{clearTimeout(draftTimer);draftTimer=setTimeout(persistDraft,400);});
 $('#stop-agent').addEventListener('click',async()=>{try{await api('/api/stop',{});await refresh();}catch(error){toast(error.message);}});
 $('#new-task').addEventListener('click',()=>showPicker('新建任务','<input id="task-title" class="picker-input" placeholder="要做什么？" required>',async()=>{try{await operation('task',{title:$('#task-title').value});await refresh();}catch(error){toast(error.message);}}));
+$('#transcribe-file').addEventListener('click',async()=>{
+  const file=getFile(state.active),job=transcription.jobs.find(item=>item.file===file.id&&item.source_sha256===file.sha256);
+  if(job?.status==='completed'){openFile(job.transcript);return;}
+  const button=$('#transcribe-file');button.disabled=true;
+  try {
+    if(job?.status==='running')await api('/api/transcription',{action:'stop',args:{job:job.id}});
+    else {
+      const resources=await api('/api/transcription',{action:'check',args:{}});
+      if(!resources.eligible){toast(resources.message+'。已有文字稿可直接使用。');return;}
+      const allow_install=!transcription.installed;
+      if(allow_install&&!confirm('已有讲稿或转写稿？直接添加文字文件即可，无需安装。\n\n'+resources.message+'\n首次下载约 3.8 GiB 模型及运行环境；检测要求至少 '+resources.required_disk_gib+' GiB 空闲磁盘、'+resources.required_memory_gib+' GiB 实际可用内存。录音在本机处理。是否下载并开始？'))return;
+      const result=await api('/api/transcription',{action:'start',args:{file:file.id,expected:file.sha256,allow_install}});
+      toast((result.needs_install||result.blocked)?result.message:'正在转写；原录音会保留');
+    }
+    await refresh(true);
+  }catch(error){toast(error.message);}finally{button.disabled=readonly;}
+});
 $('#compile-file').addEventListener('click',async()=>{
   const file=getFile(state.active),button=$('#compile-file');button.disabled=true;button.textContent='编译中…';
   try{const result=await operation('compile',{file:file.id,expected:file.sha256});await refresh(true);if(result.ok){getFile(file.id).mode='pdf';renderTask();toast('PDF 已生成，等待内容与版式核验');}else{toast('编译失败，已保留上一版 PDF');}}

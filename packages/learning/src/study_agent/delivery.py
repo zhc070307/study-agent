@@ -15,7 +15,10 @@ def routes():
     base = Path(__file__).resolve().parents[2] / 'skills/study-system'
     return {'course_method': str(base / 'SKILL.md'),
             'note': str(base.parent / 'study-notes/SKILL.md'),
-            'worksheet': str(base.parent / 'study-worksheets/SKILL.md')}
+            'worksheet': str(base.parent / 'study-worksheets/SKILL.md'),
+            'files': str(base.parent / 'study-files/SKILL.md'),
+            'feedback': str(base.parent / 'study-feedback/SKILL.md'),
+            'transcription': str(base.parent / 'study-transcription/SKILL.md')}
 
 
 def _work(root, work):

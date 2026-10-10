@@ -7,15 +7,17 @@ from pathlib import Path
 import queue
 import signal
 import subprocess
+import sys
 import tempfile
 import threading
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit, unquote
 
-from workspace import Workspace, encoded, PROJECT, MAX_FILE
+from workspace import Workspace, encoded, PROJECT, MAX_FILE, MAX_AUDIO
 from run import patch, runtime_command
 from semesters import Semesters
+from transcription import Transcription, perform as transcribe
 from urllib.parse import parse_qs
 from functools import wraps
 
@@ -25,7 +27,7 @@ def serialized(method):
         # A compile must not block status/stop. Selection changes instead refuse in-flight HTTP work.
         if urlsplit(self.path).path in ('/api/semesters','/api/semester-export'):
             with self.server.lifecycle_lock:
-                if self.server.pending_operations:
+                if self.server.pending_operations or any(job['status']=='running' for job in Transcription(self.server.root).records()):
                     return self.reply({'error':'文件操作尚未完成，请稍后再管理学期'},409)
                 return method(self)
         with self.server.lifecycle_lock:self.server.pending_operations+=1
@@ -261,6 +263,7 @@ class Handler(BaseHTTPRequestHandler):
                 state=store.snapshot()
                 state['semesters']=self.server.semesters.load()
                 state['runtime']={'active':self.server.runtime.active,'status':self.server.runtime.status,'error':self.server.runtime.error}
+                state['transcription']=Transcription(self.server.root).status()
                 return self.reply(state)
             if path.startswith('/api/file/'):
                 self.current_semester()
@@ -301,7 +304,7 @@ class Handler(BaseHTTPRequestHandler):
             self.trusted()
             if self.headers.get('Content-Type','').split(';')[0]!='application/json': raise ValueError('请发送 JSON')
             size=int(self.headers.get('Content-Length','0'))
-            if size<=0 or size>MAX_FILE*2: raise ValueError('请求大小无效')
+            if size<=0 or size>MAX_AUDIO*4//3+1024*1024: raise ValueError('请求大小无效')
             args=json.loads(self.rfile.read(size))
             path=urlsplit(self.path).path
             if path=='/api/semesters':
@@ -316,6 +319,8 @@ class Handler(BaseHTTPRequestHandler):
             self.current_semester(args.get('semester'))
             if self.server.semesters.item()['status']!='open' and path!='/api/stop' and not (path=='/api/workspace' and args.get('action') in ('read','history')):
                 raise ValueError('这个学期已归档，文件可查看和下载；重新开始后可以修改或提问')
+            if path=='/api/transcription':
+                return self.reply(transcribe(self.server.root,args['action'],args.get('args',{})))
             if path=='/api/chat': return self.reply(self.server.runtime.prompt(args))
             if path=='/api/stop':
                 data=self.server.semesters.load()
@@ -330,10 +335,10 @@ class Handler(BaseHTTPRequestHandler):
         finally:
             if store: store.close()
 
-def create_server(root,port=0,**runtime_options):
+def create_server(root,port=0,*,container=False,**runtime_options):
     root=Path(root).resolve()
     root.mkdir(parents=True,exist_ok=True)
-    server=ThreadingHTTPServer(('127.0.0.1',port),Handler)
+    server=ThreadingHTTPServer(('0.0.0.0' if container else '127.0.0.1',port),Handler)
     server.lifecycle_lock=threading.RLock()
     server.pending_operations=0
     server.semesters=Semesters(root)
@@ -345,16 +350,20 @@ def create_server(root,port=0,**runtime_options):
     return server
 
 def main():
-    parser=argparse.ArgumentParser(description='学习桌云端服务（仅监听回环地址）')
+    parser=argparse.ArgumentParser(description='Study Agent 单用户服务')
     parser.add_argument('--data',type=Path,default=PROJECT/'.data')
     parser.add_argument('--port',type=int,default=8765)
     parser.add_argument('--model',default=os.environ.get('STUDY_MODEL','deepseek-flash'))
+    parser.add_argument('--container',action='store_true',help='用于容器内部监听；宿主端口仍应只绑定 127.0.0.1')
     args=parser.parse_args()
-    server=create_server(args.data,args.port,model=args.model)
+    # Validate before creating study state. Imported test servers use create_server directly.
+    result=subprocess.call([sys.executable,str(PROJECT/'scripts/doctor.py'),'--require-model','--data',str(args.data)])
+    if result: return result
+    server=create_server(args.data,args.port,container=args.container,model=args.model)
     print(f'Study Agent: http://127.0.0.1:{server.server_port}',flush=True)
     signal.signal(signal.SIGTERM,lambda *_: (_ for _ in ()).throw(KeyboardInterrupt()))
     try: server.serve_forever()
     except KeyboardInterrupt: pass
     finally: server.runtime.stop(); server.server_close()
 
-if __name__=='__main__': main()
+if __name__=='__main__': raise SystemExit(main())

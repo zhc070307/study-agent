@@ -16,9 +16,14 @@ export function apply(ctx: Context) {
       const result=options.messages.filter(m=>m.role==='tool').at(-1)!
       if(result.isError||!JSON.stringify(result.content).includes('runtime-ok'))throw new Error('Shell state was not preserved')
       const names = options.tools?.map(tool => tool.name) ?? []
-      if (!['study_read', 'study_work', 'study_change'].every(name => names.includes(name))) {
+      if (!['study_read', 'study_work', 'study_change', 'study_transcribe'].every(name => names.includes(name))) {
         throw new Error('Study tools were not mounted in the actual profile')
       }
+      return toolCallResponse('profile-transcribe-status','study_transcribe',{action:'status',input:'{}'})
+    },
+    options=>{
+      const result=options.messages.filter(m=>m.role==='tool').at(-1)!
+      if(result.isError||!JSON.stringify(result.content).includes('gpu_required'))throw new Error('Transcription resource checks were not exposed')
       return toolCallResponse('profile-start', 'study_work', { action: 'start', input: JSON.stringify({ course: 'DEMO', flow: 'feedback' }) })
     },
     toolCallResponse('profile-read', 'study_read', { course: 'DEMO' }),

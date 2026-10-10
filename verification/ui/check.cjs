@@ -39,9 +39,24 @@ const {chromium}=require(process.env.STUDY_UI_PLAYWRIGHT_MODULE || path.join(pac
     await page.waitForSelector('[data-folder="'+folder.id+'"]');
     assert.equal(await page.locator('#files').isVisible(),false);
     if(process.env.STUDY_UI_CAPTURE)await page.screenshot({path:path.join(root,'ui/previews/desktop.png')});
+    // User-visible audio tool, using a scripted recognizer in the temporary test workspace.
+    const audio=await op('create',{name:'第一讲录音.wav',mime:'audio/wav',data:Buffer.from('scripted audio').toString('base64'),folder:folder.id});
+    await page.locator('[data-folder="'+folder.id+'"]').click();
+    await page.getByRole('button',{name:'打开 第一讲录音.wav',exact:true}).click();
+    await page.locator('#transcribe-file').click();
+    await page.waitForFunction(()=>document.querySelector('#transcribe-file')?.textContent==='打开原稿');
+    await page.locator('#transcribe-file').click();
+    await page.waitForSelector('.file-text');
+    assert.match(await page.locator('.file-text').textContent(),/脚本化转写示例/);
+    let speechState=await api('/api/state');
+    const transcript=speechState.files.find(file=>file.name==='第一讲录音-原稿.txt');
+    assert.equal(transcript.folder,folder.id);assert.deepEqual(transcript.sources,[audio.id]);
+    assert.equal(speechState.transcription.jobs[0].status,'completed');
+    await page.locator('#back').click();
+    await page.locator('#clear-folder').click();
     await page.locator('[data-task="'+exampleTask.id+'"]').check();
-    await page.waitForFunction(()=>document.querySelector('#tasks input')?.checked);
-    await page.reload();await page.waitForSelector('[data-task="'+exampleTask.id+'"]');assert.ok(await page.locator('[data-task="'+exampleTask.id+'"]').isChecked());
+    await page.waitForFunction(async id=>{const data=await (await fetch('/api/state')).json();return data.tasks.find(task=>task.id===id)?.done&&data.drafts.__layout?.active===null&&data.drafts.__layout?.folder===null;},exampleTask.id);
+    await page.reload();await page.waitForSelector('[data-task="'+exampleTask.id+'"]',{state:'attached'});assert.ok(await page.locator('[data-task="'+exampleTask.id+'"]').isChecked());
     await page.locator('[data-task-open="'+source.id+'"]').click();
     await page.waitForSelector('.markdown-body h1');
     await page.locator('[data-mode="source"]').click();assert.equal(await page.locator('.file-text').textContent(),source.text);

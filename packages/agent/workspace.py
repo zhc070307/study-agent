@@ -20,6 +20,7 @@ from agreements import read_all, read_only, library_root, save as save_agreement
 from semesters import Semesters
 
 MAX_FILE = 20 * 1024 * 1024
+MAX_AUDIO = 200 * 1024 * 1024
 
 def encoded(value):
     return json.dumps(value, ensure_ascii=False, separators=(',', ':'))
@@ -100,9 +101,9 @@ class Workspace:
     def content(self, file):
         return (self.blobs / file['sha256']).read_bytes()
 
-    def blob(self, content):
-        if len(content) > MAX_FILE:
-            raise ValueError('文件超过 20 MB')
+    def blob(self, content, limit=MAX_FILE):
+        if len(content) > limit:
+            raise ValueError('文件超过 '+str(limit//1024//1024)+' MB')
         digest = hashlib.sha256(content).hexdigest()
         path = self.blobs / digest
         if not path.exists():
@@ -256,12 +257,13 @@ class Workspace:
             if Path(filename).suffix.lower() == '.tex': mime = 'text/x-tex'
             kind = args.get('kind', 'upload')
             if kind not in ('text','upload','practice','pdf'): raise ValueError('未知阅览方式')
-            file = dict(id=uid(), name=filename, mime=mime, kind=kind, course=args.get('course') or None, folder=args.get('folder') or None, sha256=self.blob(content))
+            file = dict(id=uid(), name=filename, mime=mime, kind=kind, course=args.get('course') or None, folder=args.get('folder') or None, sha256=self.blob(content,MAX_AUDIO if mime.startswith('audio/') else MAX_FILE))
             self.check_folder(file['folder'])
             for source in args.get('sources',[]): self.file(source)
             file['sources'] = args.get('sources',[])
             file['session'] = args.get('session')
             if args.get('origin'):file['origin']=args['origin']
+            if args.get('transcription'):file['transcription']=args['transcription']
             if args.get('preparation'):
                 if not self.conn.execute('SELECT 1 FROM desktop_preparations WHERE id=?',(args['preparation'],)).fetchone():raise ValueError('制作依据不存在')
                 file['preparation']=args['preparation']
@@ -370,9 +372,12 @@ class Workspace:
             ok,log = False,str(error)
         record = dict(kind=prepared.get('kind'),course=prepared.get('course'),brief=prepared.get('brief'),id=identifier,file=file['id'],source_sha256=file['sha256'],ok=ok,log=log,work=str(work))
         if ok:
-            info = subprocess.run(['pdfinfo',str(work/'main.pdf')],capture_output=True,text=True,check=True,timeout=15).stdout
-            count = next(int(line.split(':')[1]) for line in info.splitlines() if line.startswith('Pages:'))
-            record.update(sha256=self.blob((work/'main.pdf').read_bytes()),pages=count,accepted=False)
+            try:
+                info = subprocess.run(['pdfinfo',str(work/'main.pdf')],env=dict(env,LC_ALL='C'),capture_output=True,text=True,check=True,timeout=15).stdout
+                count = next(int(line.split(':')[1]) for line in info.splitlines() if line.startswith('Pages:'))
+                record.update(sha256=self.blob((work/'main.pdf').read_bytes()),pages=count,accepted=False)
+            except (OSError,subprocess.SubprocessError,StopIteration,ValueError):
+                record.update(ok=False,log='PDF 核验未完成，上一版仍保留；请检查 PDF 读取工具后重试。')
         with db.atomic(self.conn, bump_revision=False):
             current = self.file(file['id'])
             if current['sha256']!=file['sha256']:

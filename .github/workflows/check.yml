@@ -17,9 +17,29 @@ jobs:
         with:
           version: 11.19.0
       - name: PDF dependencies
-        run: sudo apt-get update && sudo apt-get install -y latexmk texlive-xetex texlive-lang-chinese poppler-utils
+        run: sudo apt-get update && sudo apt-get install -y latexmk texlive-xetex texlive-lang-chinese texlive-latex-extra texlive-fonts-recommended texlive-science poppler-utils
       - run: ./study-agent setup
       - name: Browser dependencies
         run: pnpm exec playwright install --with-deps chromium
       - run: ./study-agent check
       - run: node verification/ui/check.cjs
+  container:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t study-agent:check .
+      - run: docker run --rm study-agent:check python3 study-agent doctor
+      - run: docker run --rm study-agent:check python3 packages/agent/tests/profile_loop.py
+      - run: STUDY_CHECK_IMAGE=study-agent:check python3 verification/deployment/check.py
+  native-device-checks:
+    strategy:
+      matrix:
+        os: [macos-14, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m unittest discover -s verification/transcription -p test_device.py -q

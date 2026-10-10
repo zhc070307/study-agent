@@ -54,3 +54,7 @@ evidence/
 
 # Native runtime output (compiled by setup)
 packages/runtime/native/**/bin/
+
+# Optional speech environment and weights
+.transcription/
+.local-tools/

@@ -11,6 +11,12 @@
 
 采用范围：模型循环、工具管线、持久会话、附件、模型适配、持久命令执行、必要服务与定向测试。未纳入原桌面/网页产品、账户平台、Office 工具或其他无关应用。启动、源代码布局、配置组成和依赖声明由本项目维护。原内部包名保留用于稳定模块身份，不代表需要下载 DeepSeek 仓库。
 
+## 可选录音转写
+
+采用 [LocalTranscribe](https://github.com/zhc070307/LocalTranscribe_on_going) 的版本 `42773e1a01f8029ae2f54ae7c924cbc0451d53f3`，只保留后台音频解码、切分、Qwen ASR、原稿与断点管理；未纳入其 GUI、Qt、启动器、更新器或远程全文整理。完整 Apache-2.0 许可、修改声明和来源记录保存在 `packages/transcription/LICENSE`、`NOTICE`、`SOURCE.json`。本项目修改其流程为只产出原稿，默认优先 Metal/NVIDIA GPU，并删除自动 CPU 回退；CPU 模式需用户主动选择，PyTorch/torchaudio 按后端配套安装。
+
+转写依赖和模型仅用户明确需要时下载，不包含在默认安装或本仓库中。Qwen3-ASR-1.7B-hf 为 Apache-2.0；PyTorch/torchaudio 为 BSD-3-Clause，Transformers 为 Apache-2.0，Silero VAD 为 MIT，PyAV 为 BSD-3-Clause，SoundFile 为 BSD-3-Clause，noisereduce 为 MIT。PyAV 和 SoundFile 的分发包可能附带 FFmpeg/libsndfile，须分别保留对应 LGPL 及其他许可；未来若再分发这些二进制，应核对实际 wheel 内的编解码库许可和源码义务。模型下载保留模型自身许可文件。
+
 ## 安装依赖
 
 `pnpm-lock.yaml` 固定实际安装依赖。本仓库不包含 `node_modules` 或预编译原生二进制。下表记录此次核对的安装依赖许可，包括开发与检查依赖；具体版权及完整许可由各依赖包提供。
