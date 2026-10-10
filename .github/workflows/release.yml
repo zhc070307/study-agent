@@ -1,0 +1,113 @@
+name: Publish tested installers
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/release.yml']
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: write
+concurrency:
+  group: publish-tested-installers
+  cancel-in-progress: false
+env:
+  INSTALLER_RUN: '38030399489'
+  VERIFIED_SOURCE: '3e97c9b23602725c539a8a3feacd5a2f4c17e5be'
+  RELEASE_TAG: v0.1.0-beta.1
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Confirm both installers passed verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api "repos/$GH_REPO/actions/runs/$INSTALLER_RUN" > run.json
+          gh api "repos/$GH_REPO/actions/runs/$INSTALLER_RUN/jobs" > jobs.json
+          python - <<'PY'
+          import json, os
+          run = json.load(open('run.json'))
+          jobs = json.load(open('jobs.json'))['jobs']
+          assert run['head_sha'] == os.environ['VERIFIED_SOURCE']
+          assert run['path'] == '.github/workflows/desktop.yml'
+          assert run['status'] == 'completed' and run['conclusion'] == 'success'
+          assert len(jobs) == 2 and all(job['conclusion'] == 'success' for job in jobs)
+          print('Verified Windows and macOS installers; reusing the tested bytes.')
+          PY
+      - name: Retrieve verified installers
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ env.INSTALLER_RUN }}
+          artifact-ids: '11661839217,11661618446'
+          path: installers
+      - name: Prepare download names and checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib, json, shutil
+          output = Path('downloads')
+          output.mkdir()
+          manifest = {}
+          for extension, name in [('exe', 'Study-Agent-0.1.0-Windows-x64.exe'), ('dmg', 'Study-Agent-0.1.0-macOS-arm64.dmg')]:
+              matches = list(Path('installers').rglob('*.' + extension))
+              assert len(matches) == 1, matches
+              target = output / name
+              shutil.copyfile(matches[0], target)
+              with target.open('rb') as stream:
+                  digest = hashlib.file_digest(stream, 'sha256').hexdigest()
+              manifest[name] = {'size': target.stat().st_size, 'digest': 'sha256:' + digest}
+          checksums = output / 'SHA256SUMS.txt'
+          checksums.write_text(''.join(f"{info['digest'][7:]}  {name}\n" for name, info in manifest.items()))
+          manifest[checksums.name] = {'size': checksums.stat().st_size, 'digest': 'sha256:' + hashlib.sha256(checksums.read_bytes()).hexdigest()}
+          Path('manifest.json').write_text(json.dumps(manifest))
+          PY
+      - name: Upload complete downloads before publishing
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > notes.md <<'NOTES'
+          首轮用户测试版。请在下方 Assets 中选择安装包：
+
+          - **Windows**：`Study-Agent-0.1.0-Windows-x64.exe`，适用于 Windows 10（1903 或更新）/ 11，Intel 或 AMD 64 位电脑。
+          - **Mac**：`Study-Agent-0.1.0-macOS-arm64.dmg`，适用于 Apple 芯片 Mac，macOS 14 或更新。打开后拖到“应用程序”。
+
+          `Source code` 是源码，安装软件请选择 `.exe` 或 `.dmg`。安装包已包含 PDF 阅读、中文 LaTeX 排版与运行组件，安装可能需要几分钟。
+
+          首次打开可填写 DeepSeek 服务密钥，也可先取消并阅读或手动整理文件。使用方法见[项目首页](https://github.com/zhc070307/study-agent#readme)。
+
+          测试版尚无正式发行者签名与 Apple 公证，系统可能提示无法验证发行者；请核对来源后按项目首页的安装说明打开。录音转写按需安装，通过设备检查后才下载；真实设备的识别效果与速度仍需测试。
+
+          两个安装包均通过实际安装、启动、内置助理工具和中文 PDF 编译检查。Windows 卸载后保留学习资料，Mac 已验证应用签名完整性。
+
+          安装包对应源码 `3e97c9b23602725c539a8a3feacd5a2f4c17e5be`，来自[已通过的安装检查](https://github.com/zhc070307/study-agent/actions/runs/38030399489)。`SHA256SUMS.txt` 提供文件校验值。
+          NOTES
+          if gh release view "$RELEASE_TAG" --json isDraft > existing.json 2>/dev/null; then
+            python -c 'import json; assert json.load(open("existing.json"))["isDraft"], "Refusing to modify an already published release"'
+          else
+            gh release create "$RELEASE_TAG" --target "$VERIFIED_SOURCE" --draft --prerelease --title 'Study Agent 0.1.0 · 首轮测试版' --notes-file notes.md
+          fi
+          gh release upload "$RELEASE_TAG" downloads/* --clobber
+          release_id="$(gh release view "$RELEASE_TAG" --json databaseId --jq .databaseId)"
+          gh api "repos/$GH_REPO/releases/$release_id" > uploaded.json
+          python - <<'PY'
+          import json
+          expected = json.load(open('manifest.json'))
+          release = json.load(open('uploaded.json'))
+          actual = {asset['name']: asset for asset in release['assets']}
+          assert release['draft'] and release['prerelease']
+          assert actual.keys() == expected.keys()
+          for name, info in expected.items():
+              assert actual[name]['state'] == 'uploaded'
+              assert actual[name]['size'] == info['size']
+              assert actual[name]['digest'] == info['digest']
+          print('Both installers and their checksums uploaded and verified.')
+          PY
+          gh release edit "$RELEASE_TAG" --draft=false --prerelease --notes-file notes.md
+          gh release view "$RELEASE_TAG" --json url --jq .url
