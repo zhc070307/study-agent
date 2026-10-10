@@ -19,7 +19,7 @@ async function launch(){
   const texBin=process.platform==='win32'?path.join(tex,'bin','windows'):path.join(tex,'bin','universal-darwin');
   const data=path.join(app.getPath('userData'),'learning');
   fs.mkdirSync(data,{recursive:true});
-  const env={...process.env,STUDY_NATIVE:'1',STUDY_NODE:node,PYTHONUTF8:'1',PYTHONNOUSERSITE:'1',PATH:[path.dirname(node),texBin,process.env.PATH||''].join(path.delimiter),TEXMFVAR:path.join(app.getPath('userData'),'tex-cache'),TEXMFCONFIG:path.join(app.getPath('userData'),'tex-config')};
+  const env={...process.env,STUDY_NATIVE:'1',STUDY_NODE:node,PYTHONUTF8:'1',PYTHONNOUSERSITE:'1',PYTHONDONTWRITEBYTECODE:'1',PATH:[path.dirname(node),texBin,process.env.PATH||''].join(path.delimiter),TEXMFVAR:path.join(app.getPath('userData'),'tex-cache'),TEXMFCONFIG:path.join(app.getPath('userData'),'tex-config')};
   delete env.PYTHONHOME;delete env.PYTHONPATH;
   backend=spawn(python,['-X','utf8',path.join(runtime,'packages','agent','desktop.py'),'--data',data],{cwd:runtime,env,windowsHide:true,stdio:['ignore','pipe','pipe']});
   let output='',ready=false;

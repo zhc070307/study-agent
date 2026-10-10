@@ -13,6 +13,8 @@ permissions:
   contents: read
 jobs:
   installer:
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
     strategy:
       fail-fast: false
       matrix:
@@ -137,6 +139,7 @@ jobs:
           codesign --verify --deep --strict "$installed_app"
           "$installed_app/Contents/MacOS/Study Agent"
           "$installed_app/Contents/Resources/python/bin/python3" -X utf8 verification/desktop/check.py --runtime "$installed_app/Contents/Resources/runtime"
+          codesign --verify --deep --strict "$installed_app"
       - uses: actions/upload-artifact@v4
         with:
           name: Study-Agent-${{ runner.os }}-${{ runner.arch }}

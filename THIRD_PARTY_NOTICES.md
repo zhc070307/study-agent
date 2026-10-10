@@ -23,6 +23,8 @@
 
 桌面安装包包含 Electron、Node.js、Python、TinyTeX、pypdfium2、Pillow、时区数据及 JavaScript 运行依赖，各组件完整许可随其目录保留。PDF 读取采用 pypdfium2 和 PDFium，不包含 PyMuPDF。TinyTeX 包中字体、宏包和排版引擎保留各自许可，不以本项目 MIT 许可替代。
 
+Windows 包中的 TeX 可执行文件由本项目构建脚本调整应用清单，启用 UTF-8 代码页，以支持中文安装路径；原有清单信息保留。修改步骤见 `scripts/desktop-build.py`，原排版引擎源码由 [TeX Live 源码仓库](https://github.com/TeX-Live/texlive-source) 提供，各原许可继续适用。
+
 图像依赖中的 libvips 使用 LGPL-3.0-or-later。随包保留其许可、实际组件版本和声明；对应源码及构建脚本由 [sharp-libvips v1.3.2](https://github.com/lovell/sharp-libvips/tree/v1.3.2) 提供，组件来源与版本可在该版本构建脚本和包内 `versions.json` 中核对。这些库的许可不要求将本项目自己的全部代码改为 LGPL；用户可替换安装目录中的相应共享库。MPL 依赖保留相应文件许可及上游源码地址。
 
 | 安装依赖 | 许可 |
