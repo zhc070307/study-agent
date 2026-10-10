@@ -260,7 +260,15 @@ class Workspace:
             if saved and saved['file']!=file['id']:raise ValueError('此位置已有其他文件')
             if not saved and target.exists():raise ValueError('此位置已有课程文件，请先读取并保留原件')
             category=relative.parts[0] if relative.parts and relative.parts[0] in CATEGORIES else 'materials'
-            file.update(course=course['code'],folder=self.category_folder(course['code'],category),category=category,course_path=path,organization_reason=args['reason'])
+            folder=self.category_folder(course['code'],category)
+            parts=relative.parts[1:-1] if relative.parts[0] in CATEGORIES else relative.parts[:-1]
+            for part in parts:
+                row=self.conn.execute('SELECT id FROM desktop_folders WHERE parent=? AND name=?',(folder,part)).fetchone()
+                if row:folder=row['id']
+                else:
+                    child={'id':uid(),'name':part,'parent':folder};self.save_folder(child);folder=child['id']
+            file.update(name=relative.name,course=course['code'],folder=folder,category=category,organization_reason=args['reason'])
+            path=course['code']+'/'+self.folder_storage_path(folder)+'/'+self.storage_name(file['name'])
             self.save_file(file)
             self.register_publication(file,path)
             self.save_file(file)

@@ -8,6 +8,7 @@ project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$project_root"
 python3 scripts/doctor.py --before-setup
 pnpm install --frozen-lockfile --ignore-scripts
+node packages/runtime/modules/subprocess/subprocess-local/scripts/ensure-spawn-helper.mjs
 headers_work="$(mktemp -d)"
 trap 'rm -rf "$headers_work"' EXIT
 node_version="$(node -p 'process.version')"

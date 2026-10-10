@@ -23,6 +23,7 @@ jobs:
         run: pnpm exec playwright install --with-deps chromium
       - run: ./study-agent check
       - run: node verification/ui/check.cjs
+      - run: node verification/ui/first-use.cjs
   container:
     runs-on: ubuntu-24.04
     timeout-minutes: 25

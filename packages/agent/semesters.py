@@ -112,7 +112,11 @@ class Semesters:
         with zipfile.ZipFile(output,'w',zipfile.ZIP_DEFLATED) as archive:
             from agreements import read_all
             memory=self.root/'.semesters/shared/.study-system/AGENT_MEMORY.md'
-            archive.writestr('semester.json',json.dumps(dict(self.item(identifier),format=1,source_root=str(root),agent_memory=memory.read_text(encoding='utf-8') if memory.exists() else '',learning_references=read_all(root)['learning']['items']),ensure_ascii=False))
+            from worker import Store
+            shared=Store(self.root/'.semesters/shared',inherit=False)
+            try:flows={row['flow']:shared.version(row['version']) for row in shared.conn.execute("SELECT flow,version FROM flow_active WHERE scope='*'")}
+            finally:shared.conn.close()
+            archive.writestr('semester.json',json.dumps(dict(self.item(identifier),format=1,source_root=str(root),learning_flows=flows,agent_memory=memory.read_text(encoding='utf-8') if memory.exists() else '',learning_references=read_all(root)['learning']['items']),ensure_ascii=False))
             for path in root.rglob('*'):
                 rel=path.relative_to(root)
                 if not path.is_file() or path.is_symlink(): continue
@@ -184,6 +188,7 @@ class Semesters:
                                             except ValueError:updated=relocate(value)
                                             if updated!=value:conn.execute('UPDATE "'+table+'" SET "'+column+'"=? WHERE rowid=?',(updated,rowid))
                     references=manifest.get('learning_references',{})
+                    if manifest.get('learning_flows'):references['__learning_flows__']={'scope':'learning','key':'旧流程候选','definitions':manifest['learning_flows'],'reason':'备份中的通用服务方式，需结合当前用户意愿验证后采用'}
                     if manifest.get('agent_memory'):references['__agent_memory__']={'scope':'learning','key':'旧记忆候选','text':manifest['agent_memory'],'reason':'备份中保存的参考，不覆盖当前意愿'}
                     if references:
                         folder=target/'.study-system';folder.mkdir(exist_ok=True)
