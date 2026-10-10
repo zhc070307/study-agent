@@ -1,6 +1,11 @@
 name: Cloud verification
 on:
   push:
+    branches: [main]
+    paths-ignore:
+      - README.md
+      - '.github/workflows/release.yml'
+      - '.github/workflows/tooling.yml'
   pull_request:
 permissions:
   contents: read

@@ -91,7 +91,11 @@ jobs:
           if gh release view "$RELEASE_TAG" --json isDraft > existing.json 2>/dev/null; then
             python -c 'import json; assert json.load(open("existing.json"))["isDraft"], "Refusing to modify an already published release"'
           else
-            gh release create "$RELEASE_TAG" --target "$VERIFIED_SOURCE" --draft --prerelease --title 'Study Agent 0.1.0 · 首轮测试版' --notes-file notes.md
+            # The version tag is pushed with repository authorization before publishing.
+            # GITHUB_TOKEN can upload releases but cannot tag an older workflow commit.
+            gh api "repos/$GH_REPO/git/ref/tags/$RELEASE_TAG" > tag.json
+            python -c 'import json, os; assert json.load(open("tag.json"))["object"]["sha"] == os.environ["VERIFIED_SOURCE"]'
+            gh release create "$RELEASE_TAG" --verify-tag --draft --prerelease --title 'Study Agent 0.1.0 · 首轮测试版' --notes-file notes.md
           fi
           gh release upload "$RELEASE_TAG" downloads/* --clobber
           release_id="$(gh release view "$RELEASE_TAG" --json databaseId --jq .databaseId)"
