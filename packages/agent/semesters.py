@@ -5,6 +5,7 @@ import file_lock as fcntl
 import hashlib
 import os
 import sqlite3
+from contextlib import closing
 import tempfile
 import uuid
 import zipfile
@@ -128,7 +129,7 @@ class Semesters:
             if source.exists():
                 with tempfile.TemporaryDirectory() as directory:
                     backup=Path(directory)/'ledger.sqlite3'
-                    with sqlite3.connect(source) as conn, sqlite3.connect(backup) as dest: conn.backup(dest)
+                    with closing(sqlite3.connect(source)) as conn, closing(sqlite3.connect(backup)) as dest: conn.backup(dest)
                     archive.write(backup,'.study-system/data/task_memory.sqlite3')
         output.seek(0)
         return output
@@ -167,7 +168,7 @@ class Semesters:
                         with archive.open(entry) as reader,destination.open('wb') as writer:shutil.copyfileobj(reader,writer)
                     ledger=target/'.study-system/data/task_memory.sqlite3'
                     if ledger.exists():
-                        with sqlite3.connect(ledger) as conn:
+                        with closing(sqlite3.connect(ledger)) as conn,conn:
                             if conn.execute('PRAGMA integrity_check').fetchone()[0]!='ok':raise ValueError('备份中的学习记录损坏')
                             old=manifest.get('source_root')
                             if old:

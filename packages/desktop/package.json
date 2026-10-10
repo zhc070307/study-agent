@@ -16,6 +16,7 @@
     "files":["main.cjs","boot.html","package.json"],
     "extraResources":[
       {"from":"../../.build/desktop-runtime","to":"runtime"},
+      {"from":"../../.build/desktop-runtime/node_modules","to":"runtime/node_modules","filter":["**/*"]},
       {"from":"../../.build/desktop-python","to":"python"},
       {"from":"../../.build/desktop-tex","to":"tex"},
       {"from":"../../LICENSE","to":"LICENSE"},
