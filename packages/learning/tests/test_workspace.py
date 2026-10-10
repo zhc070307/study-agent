@@ -1,5 +1,6 @@
 import json
 import sqlite3
+from contextlib import closing
 import subprocess
 import sys
 import tempfile
@@ -27,7 +28,7 @@ class WorkspaceTests(unittest.TestCase):
         for term in [self.a,self.b]:self.assertEqual(self.run_command(term,'init').returncode,0)
         self.assertEqual(self.run_command(self.a,'course','add','--code','TEST101','--name','Test').returncode,0)
         for term,expected in [(self.a,1),(self.b,0)]:
-            with sqlite3.connect(term/'.study-system/data/task_memory.sqlite3') as conn:
+            with closing(sqlite3.connect(term/'.study-system/data/task_memory.sqlite3')) as conn:
                 self.assertEqual(conn.execute('select count(*) from courses').fetchone()[0],expected)
     def test_missing_semester_does_not_create_a_database(self):
         missing=self.root/'removed';r=self.run_command(missing,'course','list')

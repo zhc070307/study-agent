@@ -241,14 +241,19 @@ class Textbooks:
         offset = integer(self.args.get('offset', 0), '结果起点', minimum=0)
         if limit > 30:
             raise ValueError('每次最多返回 30 页，可用 offset 继续查询')
-        if terms:
+        cjk_terms = [term for term in terms if re.search(r'[\u3400-\u9fff\uf900-\ufaff\U00020000-\U0002fa1f]', term)]
+        word_terms = [term for term in terms if term not in cjk_terms]
+        for term in cjk_terms:
+            filters.append('instr(p.text,?)>0')
+            values.append(term)
+        if word_terms:
             table = 'textbook_fts JOIN textbook_pages p ON p.id=textbook_fts.rowid'
             snippet = "snippet(textbook_fts,0,'[',']',' … ',48)"
             filters.append('textbook_fts MATCH ?')
-            values.append(' AND '.join('"' + term + '"' for term in terms))
+            values.append(' AND '.join('"' + term + '"' for term in word_terms))
             order = 'bm25(textbook_fts),p.pdf_page'
         else:
-            if chapter is None and label is None and 'pdf_start' not in self.args and 'pdf_end' not in self.args:
+            if not cjk_terms and chapter is None and label is None and 'pdf_start' not in self.args and 'pdf_end' not in self.args:
                 raise ValueError('请提供关键词、章节或页码范围')
             table, snippet, order = 'textbook_pages p', 'substr(p.text,1,350)', 'p.pdf_page'
         try:

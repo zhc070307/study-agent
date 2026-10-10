@@ -212,6 +212,38 @@ class TextbookTests(unittest.TestCase):
         self.assertTrue(self.store.perform('page', dict(file=self.file['id'], page=2))['images'])
         with self.assertRaises(ValueError): self.index()
 
+    def test_chinese_substrings_mixed_keywords_and_existing_index(self):
+        contents = [(1, '本章介绍函数的连续性与极限 continuity'),
+                    (2, '函数 连续性 极限 continuity'),
+                    (3, '本章讨论极限 limit')]
+        with patch('textbooks.pdf_tools.page_texts', return_value=iter(contents)):
+            self.index()
+        self.assertEqual([hit['pdf_page'] for hit in self.call('search', query='连续性')['results']], [1, 2])
+        self.assertEqual([hit['pdf_page'] for hit in self.call('search', query='极限')['results']], [1, 2, 3])
+        self.assertEqual([hit['pdf_page'] for hit in self.call('search', query='连续性 continuity')['results']], [1, 2])
+        self.assertEqual(self.call('search', query='连续性 nonexistent')['results'], [])
+        first = self.call('search', query='极限', limit=1)
+        self.assertEqual(first['next_offset'], 1)
+        self.assertEqual(self.call('search', query='极限', pdf_start=3)['results'][0]['pdf_page'], 3)
+        self.store.close()
+        self.store = Workspace(self.root)
+        self.assertEqual(len(self.call('search', query='连续性')['results']), 2)
+
+    def test_long_pdf_read_reports_continuation_and_reaches_last_page(self):
+        pages = [['Reference material for definitions and reasoning.'] * 5 for _ in range(600)]
+        pages[-1] = ['LastPageNeedle600']
+        book = self.upload(pdf(pages), 'long-book.pdf')
+        first = self.store.perform('read', dict(file=book['id']))
+        self.assertEqual(len(first['text']), 100000)
+        self.assertTrue(first['truncated'])
+        self.assertTrue(first['warning'])
+        remaining = self.store.perform('read', dict(file=book['id'], offset=first['next_offset'], expected=book['sha256']))
+        self.assertIn('LastPageNeedle600', remaining['text'])
+        self.assertIsNone(remaining['next_offset'])
+        self.assertFalse(remaining['truncated'])
+        for values in [dict(offset=-1), dict(limit=100001), dict(offset=True), dict(expected='stale')]:
+            with self.assertRaises(ValueError):
+                self.store.perform('read', dict(file=book['id'], **values))
 
 if __name__ == '__main__':
     unittest.main()

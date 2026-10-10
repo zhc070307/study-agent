@@ -2,6 +2,7 @@
 from pathlib import Path
 import subprocess
 import sqlite3
+from contextlib import closing
 import json
 import sys
 import tempfile
@@ -75,7 +76,7 @@ class ServicesTests(unittest.TestCase):
             self.assertTrue((self.root / name).is_file())
         self.assertIn(task.title, (self.root / 'TODAY_WORKING.md').read_text())
         self.assertEqual(self.store.conn.execute('SELECT COUNT(*) FROM courses').fetchone()[0], 1)
-        with sqlite3.connect(self.root / '.study-system/backups/latest.sqlite3') as backup:
+        with closing(sqlite3.connect(self.root / '.study-system/backups/latest.sqlite3')) as backup:
             self.assertEqual(backup.execute('SELECT status FROM flow_runs WHERE id=?', (run['id'],)).fetchone()[0], 'completed')
 
     def test_daily_stale_course_rejects_and_rolls_back_pool_changes(self):
@@ -232,7 +233,7 @@ with db.atomic(s.conn):
         self.store = Store(self.root)
         self.assertEqual(self.store.cleanup(), [])
         self.assertEqual(self.store.tasks.get_task(task.task_key).status, 'completed')
-        with sqlite3.connect(self.root / '.study-system/backups/latest.sqlite3') as backup:
+        with closing(sqlite3.connect(self.root / '.study-system/backups/latest.sqlite3')) as backup:
             self.assertEqual(backup.execute('SELECT status FROM tasks WHERE id=?', (task.id,)).fetchone()[0], 'completed')
 
     def test_view_publication_uses_execution_order_instead_of_run_creation_order(self):

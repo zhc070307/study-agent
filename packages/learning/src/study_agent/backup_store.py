@@ -4,7 +4,7 @@ import os
 import tempfile
 import zipfile
 from datetime import timedelta
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 from . import db
 from .errors import ConflictError, NotFoundError
@@ -12,18 +12,31 @@ from .models import Clock, from_iso, HKT
 
 
 def backup_path(root, reference):
-    path = Path(reference)
+    reference = str(reference)
+    normalized = reference.replace('\\', '/')
+    path = Path(normalized)
+    absolute = normalized.startswith('/') or path.is_absolute() or PureWindowsPath(reference).is_absolute()
     marker = '.study-system/backups/'
-    if path.is_absolute() and marker in reference:
-        return Path(root) / marker / reference.split(marker, 1)[1]
-    return path if path.is_absolute() else Path(root) / path
+    if absolute and marker in normalized:
+        return Path(root) / marker / normalized.split(marker, 1)[1]
+    return path if absolute else Path(root) / path
+
+
+def verified_bytes(content, expected_hash):
+    """Accept old Windows text backups only if canonical newlines match their recorded hash."""
+    if hashlib.sha256(content).hexdigest() == expected_hash:
+        return content
+    normalized = content.replace(b'\r\n', b'\n').replace(b'\r', b'\n')
+    if hashlib.sha256(normalized).hexdigest() == expected_hash:
+        return normalized
+    raise ConflictError('Backup hash mismatch')
 
 
 def read_backup(root, reference, expected_hash=None):
     archive, separator, member = reference.partition('::')
     path = backup_path(root, archive)
     if not path.is_file():
-        if not separator and '/course-context/' in str(path) and expected_hash:
+        if not separator and 'course-context' in path.parts and expected_hash:
             course_id = path.parent.name
             canonical = Path(root) / '.study-system/backups/course-context' / course_id / (expected_hash + '.md')
             if canonical.is_file():
@@ -31,7 +44,7 @@ def read_backup(root, reference, expected_hash=None):
             archived = Path(root) / '.study-system/backups/archives/course-context.zip'
             if archived.is_file():
                 return read_backup(root, str(archived) + '::' + course_id + '/' + expected_hash + '.md', expected_hash)
-        if not separator and '/agent-memory/' in str(path):
+        if not separator and 'agent-memory' in path.parts:
             archived = Path(root) / '.study-system/backups/archives/agent-memory.zip'
             if archived.is_file():
                 return read_backup(root, str(archived) + '::' + path.name, expected_hash or path.stem)
@@ -41,8 +54,11 @@ def read_backup(root, reference, expected_hash=None):
             content = stream.read(member)
     else:
         content = path.read_bytes()
-    if expected_hash and hashlib.sha256(content).hexdigest() != expected_hash:
-        raise ConflictError('Backup hash mismatch: ' + reference)
+    if expected_hash:
+        try:
+            content = verified_bytes(content, expected_hash)
+        except ConflictError:
+            raise ConflictError('Backup hash mismatch: ' + reference) from None
     return content.decode('utf-8')
 
 
@@ -67,7 +83,7 @@ def _archive(path, additions):
             for name, content in entries.items():
                 if stream.read(name) != content:
                     raise ConflictError('Archive verification failed: ' + name)
-        with open(temporary, 'rb') as stream:
+        with open(temporary, 'r+b') as stream:
             os.fsync(stream.fileno())
         os.replace(temporary, path)
     finally:
@@ -133,9 +149,11 @@ def _maintain_backups(conn, root, clock=None, force=False, retention_days=0):
     memory_additions, memory_removals = {}, set()
     for path in (root / '.study-system/backups/agent-memory').glob('*.md'):
         content = path.read_bytes()
-        digest = hashlib.sha256(content).hexdigest()
-        if path.stem != digest:
-            raise ConflictError('Action-memory backup filename/hash mismatch: ' + str(path))
+        digest = path.stem
+        try:
+            content = verified_bytes(content, digest)
+        except ConflictError:
+            raise ConflictError('Action-memory backup filename/hash mismatch: ' + str(path)) from None
         if retention_days == 0 or path.stat().st_mtime < cutoff.timestamp():
             memory_additions[digest + '.md'] = content
             memory_removals.add(path)

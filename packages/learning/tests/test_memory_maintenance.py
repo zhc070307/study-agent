@@ -132,3 +132,29 @@ class MemoryMaintenanceTests(ServiceTestCase):
         self.assertEqual(read_backup(self.root, saved['snapshot_path'], saved['content_hash']), 'Agreed method')
         self.assertFalse(Path(reference).exists())
         self.assertEqual(read_backup(self.root, reference), 'Old operation\nUnresolved action')
+
+    def test_new_memory_backups_keep_the_recorded_bytes_on_every_platform(self):
+        state = self.write('Current memory')
+        backup = Path(state['last_update']['value']['backup'])
+        self.assertEqual(hashlib.sha256(backup.read_bytes()).hexdigest(), backup.stem)
+        self.assertNotIn(b'\r\n', backup.read_bytes())
+
+    def test_legacy_windows_memory_backup_survives_archiving_and_relocation(self):
+        state = self.write('Current memory')
+        backup = Path(state['last_update']['value']['backup'])
+        backup.write_bytes(b'Old operation\r\nUnresolved action')
+        legacy = 'C:/old/semester/' + str(backup.relative_to(self.root)).replace('/', '\\')
+        self.assertEqual(read_backup(self.root, legacy, backup.stem), 'Old operation\nUnresolved action')
+        maintain_backups(self.conn, self.root, self.clock, force=True)
+        self.assertFalse(backup.exists())
+        self.assertEqual(read_backup(self.root, legacy, backup.stem), 'Old operation\nUnresolved action')
+
+    def test_legacy_windows_course_backup_does_not_accept_changed_text(self):
+        saved = self.save_course('Line one\nLine two')
+        backup = self.root / saved['snapshot_path']
+        backup.write_bytes(b'Line one\r\nLine two')
+        legacy = 'C:/old/semester/' + str(backup.relative_to(self.root)).replace('/', '\\')
+        self.assertEqual(read_backup(self.root, legacy, saved['content_hash']), 'Line one\nLine two')
+        backup.write_bytes(b'Changed line\r\nLine two')
+        with self.assertRaises(ConflictError):
+            read_backup(self.root, legacy, saved['content_hash'])

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import difflib
+from flow_handler import compile_handler, run_handler as run_data_handler
 import hashlib
 import json
 from pathlib import Path
@@ -75,7 +76,7 @@ def validate(definition):
         if step['kind'] == 'custom' and not step.get('handler'):
             raise ValueError('自定义操作需要 handler 代码')
         if step.get('handler'):
-            compile(text(step['handler'], '执行代码'), '<flow-handler>', 'exec')
+            compile_handler(text(step['handler'], '执行代码'))
             if not isinstance(step.get('tests'), list) or not step['tests']:
                 raise ValueError('新执行代码需要至少一个输入与预期结果示例')
     resolved = set()
@@ -104,13 +105,7 @@ def validate(definition):
 def run_handler(step, inputs, context):
     if not step.get('handler'):
         return inputs
-    namespace = {}
-    exec(compile(step['handler'], '<flow-handler>', 'exec'), namespace)
-    result = namespace['run'](inputs, context)
-    if not isinstance(result, dict):
-        raise ValueError('执行代码必须返回对象')
-    encoded(result)  # Reject results that cannot be saved.
-    return result
+    return run_data_handler(step['handler'], inputs, context)
 
 
 def check_handlers(definition):
@@ -367,8 +362,8 @@ class Store:
             definition = validate(args['definition'])
             if definition.get('scope', 'course') != current['definition'].get('scope', 'course'):
                 raise ValueError('流程的账本范围不能在版本切换中改变')
-            # Generated code is trusted application code. Check it in a separate
-            # process with a temporary working directory, not in the live worker.
+            # Handlers are validated data-only functions, not trusted application
+            # code. Test examples separately with a bounded execution timeout.
             with tempfile.TemporaryDirectory() as directory:
                 checked = subprocess.run([sys.executable, str(Path(__file__).resolve()), '--check'],
                     input=encoded(definition), text=True, capture_output=True, cwd=directory, timeout=5)

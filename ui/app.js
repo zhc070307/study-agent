@@ -52,7 +52,11 @@ async function refresh(force=false) {
   const contentChanged = force || JSON.stringify(files.map(f=>[f.id,f.sha256,f.name,f.folder,f.pdf,f.compile_result,f.accepted])) !== JSON.stringify(data.files.map(f=>[f.id,f.sha256,f.name,f.folder,f.pdf,f.compile_result,f.accepted]));
   applying=true;
   const old = new Map(files.map(file=>[file.id,file]));
-  files.splice(0,files.length,...data.files.map(file=>({...old.get(file.id),...file})));
+  files.splice(0,files.length,...data.files.map(file=>{
+    const previous=old.get(file.id), merged={...previous,...file};
+    if(previous?.sha256!==file.sha256){delete merged.text;delete merged.loading;delete merged.loadError;}
+    return merged;
+  }));
   folders.splice(0,folders.length,...data.folders);
   tasks.splice(0,tasks.length,...data.tasks);courses=data.courses||[];
   state.messages=new Map(Object.entries(data.messages));
@@ -196,9 +200,29 @@ function restoreComposition(defaultContexts) {
   state.pendingQuote = null;
   $('#prompt').value = saved?.prompt || '';
 }
+const textReads=new Set();
+async function loadText(file) {
+  if(!file.textual || file.text!==undefined || file.loadError)return;
+  const semester=semesterId, digest=file.sha256, key=semester+':'+file.id+':'+digest;
+  if(textReads.has(key))return;
+  textReads.add(key);file.loading=true;
+  try {
+    const result=await operation('read',{file:file.id,expected:digest});
+    const current=getFile(file.id);
+    if(semesterId===semester && current?.sha256===digest && result.sha256===digest){current.text=result.text;delete current.loadError;}
+  } catch(error) {
+    const current=getFile(file.id);
+    if(semesterId===semester && current?.sha256===digest)current.loadError=error.message;
+  } finally {
+    textReads.delete(key);
+    const current=getFile(file.id);
+    if(semesterId===semester && current?.sha256===digest){delete current.loading;if(state.active===file.id || state.compare===file.id)renderTask();}
+  }
+}
 function openFile(id) {
   setTimeout(persistLayout,0);
   if (!getFile(id)) return;
+  delete getFile(id).loadError;
   saveScroll(); const changed = state.active !== id;
   state.active = id; state.compare = null;
   if (!state.tabs.includes(id)) state.tabs.push(id);
@@ -215,12 +239,13 @@ function backToDesktop() {
   renderDesktop(); renderContexts(); renderConversation(); renderTabs(); $('.workspace').scrollTop = state.deskScroll;
 }
 function paper(file) {
-  if (file.loadError) return `<div class="reader-empty">${esc(file.loadError)}。请通过静态预览服务打开此页面。</div>`;
+  if (file.loadError) return `<div class="reader-empty">${esc(file.loadError)}。请重新打开文件重试。</div>`;
   let body;
   if (file.text !== undefined) {
     body = formatFor(file) === 'markdown' && file.mode !== 'source' ? `<article class="markdown-body">${markdownPreview(file.text)}</article>` : `<pre class="file-text ${formatFor(file) === 'latex' || file.mode === 'source' ? 'source-text' : ''}">${esc(file.text)}</pre>`;
     if (file.kind === 'practice') body += '<section class="answer-section"><h3>作答</h3><textarea class="answer-input" aria-label="练习作答" placeholder="写下你的思路……"></textarea><div class="answer-actions"><button class="button subtle save-answer">保存作答</button><button class="button subtle ask-answer">带着作答提问</button><span class="answer-status">作答单独保存，保留历史</span></div></section>';
-  } else if (!file.url) body = '<div class="reader-empty">无法读取此文件</div>';
+  } else if (file.textual) body = '<div class="reader-empty">正在读取文件…</div>';
+  else if (!file.url) body = '<div class="reader-empty">无法读取此文件</div>';
   else if (['image/png','image/jpeg','image/webp','image/gif'].includes(file.mime)) body = `<img class="file-image" src="${esc(file.url)}" alt="${esc(file.name)}">`;
   else if (file.mime === 'application/pdf') body = '<div class="pdf-host"><div class="reader-empty">正在打开 PDF…</div></div>';
   else if (file.mime.startsWith('audio/')) body = `<audio controls src="${esc(file.url)}"></audio>`;
@@ -266,6 +291,7 @@ function renderTask() {
   renderTabs();
   const sourceIds = state.compare ? [state.active, state.compare] : [state.active];
   const ids=sourceIds.map(id=>{const file=getFile(id);return file.mode==='pdf'&&file.pdf?file.pdf.file:id;});
+  for(const id of ids)loadText(getFile(id));
   $('#document-area').classList.toggle('comparing', Boolean(state.compare));
   $('#document-area').innerHTML = ids.map(id => `<section class="document-pane" data-file="${esc(id)}" aria-label="${esc(getFile(id).name)}">${state.compare ? `<div class="pane-label"><span>${esc(getFile(id).name)}</span>${id === state.compare ? `<button class="icon-button" id="close-compare" aria-label="关闭并排文件">${icon('close')}</button>` : ''}</div>` : ''}${paper(getFile(id))}</section>`).join('');
   for (const pane of $$('.document-pane')) { const answer = $('.answer-input', pane); if (answer) answer.value = state.answers.get(pane.dataset.file) || ''; }

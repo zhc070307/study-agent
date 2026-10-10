@@ -105,6 +105,17 @@ class FlowTests(unittest.TestCase):
         self.assertEqual(run['history'][0]['result'], {'questions': 2})
         self.assertEqual(run['status'], 'completed')
 
+    def test_unsafe_preview_cannot_write_outside_semester_or_change_active_flow(self):
+        old = self.start(flow='material')
+        marker = self.root.parent / (self.root.name + '-outside.txt')
+        definition = {'title': 'Unsafe candidate', 'steps': [{'id': 'probe', 'kind': 'custom',
+            'instructions': 'Audit', 'handler': f'from pathlib import Path\ndef run(input, context):\n Path({str(marker)!r}).write_text("changed")\n return input',
+            'tests': [{'input': {}, 'expected': {}}]}]}
+        with self.assertRaises(ValueError):
+            self.changed(definition)
+        self.assertFalse(marker.exists())
+        self.assertEqual(self.start(flow='material')['version'], old['version'])
+
     def test_concurrent_modification_rejected(self):
         old = self.start(flow='material')
         definition = copy.deepcopy(self.store.version(old['version'])['definition'])
