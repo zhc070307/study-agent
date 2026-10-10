@@ -34,7 +34,7 @@ def main():
     args = parser.parse_args()
     data = args.data.resolve()
     data.mkdir(parents=True, exist_ok=True)
-    runtime_env = dict(os.environ, DSH_HOME=str(data / '.harness'))
+    runtime_env = dict(os.environ, DSH_HOME=str(data / '.harness'),PYTHONUTF8='1')
     with tempfile.TemporaryDirectory(prefix='study-profile-') as directory:
         overlay = Path(directory) / 'study.patch.json'
         overlay.write_text(json.dumps(patch(data)), encoding='utf-8')

@@ -91,11 +91,13 @@ class Runtime:
         overlay = Path(self.temp.name)/'patch.json'
         overlay.write_text(encoded(patch(self.root)+self.extra_patch))
         self.diagnostics = tempfile.TemporaryFile(mode='w+')
-        self.process = subprocess.Popen(runtime_command('--patch',str(overlay)),cwd=PROJECT,env=dict(os.environ,DSH_HOME=str(self.root/'.harness')),stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=self.diagnostics,text=True,bufsize=1,start_new_session=True)
+        self.process = subprocess.Popen(runtime_command('--patch',str(overlay)),cwd=PROJECT,env=dict(os.environ,DSH_HOME=str(self.root/'.harness'),PYTHONUTF8='1'),stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=self.diagnostics,text=True,encoding='utf-8',bufsize=1,start_new_session=True)
         threading.Thread(target=self.read,args=(self.process,),daemon=True).start()
         try:
             self.request('initialize',{'cwd':str(self.root),'provider':self.provider,'model':self.model})
         except Exception:
+            self.diagnostics.seek(0)
+            self.start_diagnostics=self.diagnostics.read()[-16000:]
             self.kill()
             raise
 

@@ -437,6 +437,11 @@ class Workspace:
             selected_course=self.folder_course(args['folder'])
             if selected_course:course=selected_course
         selected_row=self.conn.execute('SELECT * FROM desktop_folders WHERE id=?',(file.get('folder'),)).fetchone()
+        if moving and selected_row:
+            ancestor=selected_row
+            while ancestor and not ancestor['category'] and ancestor['parent']:
+                ancestor=self.conn.execute('SELECT * FROM desktop_folders WHERE id=?',(ancestor['parent'],)).fetchone()
+            if ancestor and ancestor['category']:category=ancestor['category']
         if not category and selected_row and selected_row['category']:category=selected_row['category']
         if category and not course:raise ValueError('请先明确这份成果属于哪门课，再保存到课程内的分类文件夹')
         if moving and not category and args.get('folder'):
