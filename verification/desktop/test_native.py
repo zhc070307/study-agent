@@ -40,6 +40,35 @@ class NativeTests(unittest.TestCase):
         with path.open('a+') as first,path.open('a+') as second:
             file_lock.flock(first,file_lock.LOCK_EX)
             with self.assertRaises(BlockingIOError):file_lock.flock(second,file_lock.LOCK_EX|file_lock.LOCK_NB)
+    def test_nested_folder_rename_and_cross_course_move_keep_real_files_and_open_tasks_aligned(self):
+        store=Workspace(self.root)
+        try:
+            course=store.perform('course',{'code':'DEMO','name':'课程一'})
+            other=store.perform('course',{'code':'OTHER','name':'课程二'})
+            nested=store.perform('folder',{'name':'第一周','parent':course['folders']['notes']})
+            note=store.perform('create',{'name':'笔记.md','kind':'note','text':'原始内容','folder':nested['id']})
+            task=store.perform('task',{'title':'继续阅读','file':note['id'],'date':''})
+            self.assertTrue((self.root/'DEMO/notes/第一周/笔记.md').is_file())
+            store.perform('metadata',{'expected':store.version(),'folders':[{**nested,'name':'第二周'}]})
+            self.assertFalse((self.root/'DEMO/notes/第一周/笔记.md').exists())
+            self.assertEqual((self.root/'DEMO/notes/第二周/笔记.md').read_text(encoding='utf-8'),'原始内容')
+            store.perform('metadata',{'expected':store.version(),'files':[{'id':note['id'],'folder':other['folders']['notes'],'name':'新笔记.md'}]})
+            self.assertFalse((self.root/'DEMO/notes/第二周/笔记.md').exists())
+            self.assertEqual((self.root/'OTHER/notes/新笔记.md').read_text(encoding='utf-8'),'原始内容')
+            self.assertEqual(store.tasks.get_task(task['id']).course_id,store.tasks._resolve_course_row('OTHER')['id'])
+            self.assertEqual(store.file(note['id'])['sha256'],note['sha256'])
+        finally:store.close()
+    def test_move_preserves_outside_edits_and_reports_them(self):
+        store=Workspace(self.root)
+        try:
+            store.perform('course',{'code':'DEMO','name':'课程'})
+            note=store.perform('create',{'name':'笔记.md','kind':'note','text':'原件','course':'DEMO'})
+            (self.root/'DEMO/notes/笔记.md').write_text('系统外的修订',encoding='utf-8')
+            store.perform('metadata',{'expected':store.version(),'files':[{'id':note['id'],'name':'新名字.md'}]})
+            self.assertEqual((self.root/'DEMO/notes/笔记.md').read_text(encoding='utf-8'),'系统外的修订')
+            self.assertEqual((self.root/'DEMO/notes/新名字.md').read_text(encoding='utf-8'),'原件')
+            self.assertTrue(store.sync_publications())
+        finally:store.close()
     def test_restore_creates_independent_course_data_and_keeps_current_memory(self):
         library=Semesters(self.root)
         store=Workspace(self.root)

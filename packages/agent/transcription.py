@@ -76,7 +76,7 @@ class Transcription:
             try:message=json.load(error).get('error','本机转写请求未完成')
             except ValueError:message='本机转写请求未完成'
             raise RuntimeError(message) from None
-        except (OSError,ValueError):raise RuntimeError('无法连接本机转写后台；请启动它或检查本机防火墙，不会自动改用 CPU') from None
+        except (OSError,ValueError):raise RuntimeError('转写服务暂时不可用，请重新打开应用后再试；原录音保留，不会自动改用 CPU' if os.environ.get('STUDY_NATIVE')=='1' else '无法连接本机转写后台；请启动它或检查本机防火墙，不会自动改用 CPU') from None
 
     def host_status(self):
         if time.monotonic()-self._host_checked>2:

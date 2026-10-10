@@ -40,7 +40,7 @@ async function launch(){
   window.webContents.setWindowOpenHandler(({url})=>{if(/^https:\/\//.test(url))shell.openExternal(url);return {action:'deny'};});
   window.webContents.on('will-navigate',(event,url)=>{if(url!==origin&&!url.startsWith(origin+'/')){event.preventDefault();if(/^https:\/\//.test(url))shell.openExternal(url);}});
 }
-app.whenReady().then(launch).catch(()=>{dialog.showErrorBox('无法打开 Study Agent','软件启动未完成，请重新安装。');app.quit();});
+app.whenReady().then(launch).catch(()=>{exitStatus=1;if(!process.env.STUDY_DESKTOP_SMOKE)dialog.showErrorBox('无法打开 Study Agent','软件启动未完成，请重新安装。');else console.error('软件启动未完成');app.quit();});
 app.on('window-all-closed',()=>app.quit());
 app.on('before-quit',event=>{
   if(stopping||!backend||backend.exitCode!==null)return;

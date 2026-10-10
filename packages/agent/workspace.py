@@ -334,7 +334,7 @@ class Workspace:
             file = self.file(args['file']) if args.get('file') else None
             task = self.tasks.create_task(name(args['title']), course=args.get('course') or (file.get('course') if file else None), actor='student', status='open', due_at=args.get('due_at'),source='desktop:'+file['id'] if file else None)
             day=args.get('date',self.tasks.clock.today().isoformat())
-            self.tasks.set_placement(task.id, kind='scheduled' if day else 'backlog', scheduled_date=day or None, priority='if_time')
+            if day:self.tasks.set_placement(task.id, kind='scheduled', scheduled_date=day, priority='if_time')
             if file: self.conn.execute('INSERT INTO desktop_task_files VALUES (?,?)',(task.id,file['id']))
             return dataclass_dict(task)
         if action == 'check_task':
