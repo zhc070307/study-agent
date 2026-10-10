@@ -105,7 +105,7 @@ jobs:
           STUDY_DESKTOP_SMOKE: '1'
         run: |
           $installer = Get-ChildItem dist/desktop/*.exe | Select-Object -First 1
-          $installPath = "$env:RUNNER_TEMP\Study Agent install test"
+          $installPath = "$env:RUNNER_TEMP\学习桌面\Study Agent install test"
           $installed = Start-Process -FilePath $installer.FullName -ArgumentList '/S', "/D=$installPath" -PassThru -Wait
           if ($installed.ExitCode -ne 0) { throw 'Installer failed' }
           & "$installPath\Study Agent.exe"
@@ -122,7 +122,7 @@ jobs:
         run: |
           disk_image="$(find dist/desktop -maxdepth 1 -name '*.dmg' -print -quit)"
           mount_point="$RUNNER_TEMP/study-disk-image"
-          installed_app="$RUNNER_TEMP/study-install-test/Study Agent.app"
+          installed_app="$RUNNER_TEMP/学习桌面/Study Agent.app"
           mkdir -p "$mount_point" "$(dirname "$installed_app")"
           hdiutil attach "$disk_image" -nobrowse -mountpoint "$mount_point"
           ditto "$mount_point/Study Agent.app" "$installed_app"

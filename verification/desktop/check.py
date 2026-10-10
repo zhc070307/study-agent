@@ -19,7 +19,7 @@ from settings import Settings
 from semesters import Semesters
 from agreements import save,read_all
 
-with tempfile.TemporaryDirectory(prefix='study-native-') as temporary:
+with tempfile.TemporaryDirectory(prefix='学习桌面-native-') as temporary:
     root=Path(temporary)
     tex_root=PROJECT.parent/'desktop-tex'
     if not tex_root.exists():tex_root=PROJECT.parent/'tex'
