@@ -69,8 +69,8 @@ export function apply(ctx: Context, config: Config) {
     name: 'study_work',
     description: '开始或继续学习流程。先读取可执行操作，选择所需操作并保存真实输入和结果；出卷不代表学生已作答。switch 只在用户要求改变正在执行的流程时使用。',
     parameters: {
-      action: { type: 'string', enum: ['start', 'advance', 'switch'], required: true },
-      input: { type: 'string', required: true, description: 'JSON 对象。semester(可选)处理已准备的指定学期；start: flow,course(课程流程需要),name；全局 daily/memory 无需课程。处理器字段见 study_read 返回的 implementation 和 operations 文件；advance: run,step,input；switch: run,reason。' },
+      action: { type: 'string', enum: ['start', 'advance', 'switch','service'], required: true },
+      input: { type: 'string', required: true, description: 'JSON 对象。semester(可选)处理已准备的指定学期；start: flow,course(课程流程需要),name；全局 daily/memory 无需课程。处理器字段见 study_read 返回的 implementation 和 operations 文件；advance: run,step,input；switch: run,reason。service: arguments 参数列表，调用现有学习服务处理任务更新、日期、材料、作答和计划；先用 [--help] 或子命令的 --help 查看实际用法，不猜参数，不需要终端。数据库固定为选定学期；中断后先核对实际记录，不能重复创建证据。' },
     }, output,
     async execute(args, exec) {
       const input = JSON.parse(args.input)

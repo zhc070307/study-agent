@@ -109,6 +109,19 @@ class NativeTests(unittest.TestCase):
                     with zipfile.ZipFile(backup) as archive:self.assertIn('当前要求优先',json.loads(archive.read('semester.json'))['agent_memory'])
             finally:new.conn.close()
         finally:old.conn.close()
+    def test_agent_can_update_learning_records_without_a_terminal_and_replay_does_not_duplicate(self):
+        store=Store(self.root)
+        try:
+            help_result=store.execute({'action':'service','args':{'arguments':['task','--help']},'id':'service-help'})
+            self.assertIn('update',help_result['text'])
+            request={'action':'service','args':{'arguments':['task','create','--title','有空时复习','--status','open']},'id':'service-create'}
+            result=store.execute(request)
+            self.assertEqual(store.execute(request),result)
+            task=store.tasks.list_tasks()[0]
+            store.execute({'action':'service','args':{'arguments':['task','update',task.id,'--title','只复习一个概念']},'id':'service-update'})
+            self.assertEqual(store.tasks.get_task(task.id).title,'只复习一个概念')
+            self.assertEqual(len(store.tasks.list_tasks()),1)
+        finally:store.conn.close()
     def test_invalid_backup_cannot_escape_or_leave_partial_semester(self):
         library=Semesters(self.root)
         for name in ('../escape','C:/escape','.settings/config.json'):

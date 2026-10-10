@@ -11,6 +11,9 @@ import sqlite3
 import sys
 import tempfile
 import uuid
+import io
+import os
+from contextlib import redirect_stdout,redirect_stderr
 
 PROJECT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(PROJECT / 'packages/learning/src'))
@@ -276,7 +279,8 @@ class Store:
         restored_references=json.loads(restored.read_text(encoding='utf-8')) if restored.exists() else {}
         result = {'legacy_semester_memory':legacy_memory,'restored_references':restored_references,'transcription':transcription,'agreements':read_all(self.root,args.get('course')), 'learning_flows':learning_flows, 'courses': courses, 'memory': memory, 'recovery_warnings': self.recovery_warnings,
             'flows': {flow: self.active(flow, '*') for flow in json.loads((PROJECT / 'packages/agent/flows.json').read_text())}, 'guide': {
-            'study_command': ['python3', str(PROJECT / 'study-agent'), 'service', '--data', str(self.root)],
+            'study_command': [sys.executable, str(PROJECT / 'study-agent'), 'service', '--data', str(self.root)],
+            'service_tool': 'study_work action=service, input={arguments:[服务参数]}; 先用 arguments=[--help] 或具体子命令的 --help 查看真实用法，无需终端。',
             'standards': delivery.routes(),
             'implementation': str(PROJECT / 'packages/agent/worker.py'),
             'operations': str(PROJECT / 'packages/agent/services.py'),
@@ -442,6 +446,36 @@ class Store:
             finally:shared.conn.close()
         operation = text(request.get('id'), '操作标识')
         fingerprint = digest({'action': action, 'args': args})
+        if action=='service':
+            arguments=args.get('arguments')
+            if not isinstance(arguments,list) or not arguments or any(not isinstance(item,str) for item in arguments):raise ValueError('服务参数必须是非空文字列表')
+            if any(item.split('=')[0] in ('--db','--workspace') for item in arguments):raise ValueError('学习服务只能操作当前选择的学期')
+            journal=self.root/'.study-system/runtime/service'
+            journal.mkdir(parents=True,exist_ok=True)
+            import file_lock
+            with (journal/'service.lock').open('a+') as lock:
+                file_lock.flock(lock,file_lock.LOCK_EX)
+                record=journal/(digest(operation)+'.json')
+                if record.exists():
+                    prior=json.loads(record.read_text(encoding='utf-8'))
+                    if prior['fingerprint']!=fingerprint:raise ValueError('同一服务操作不能更改参数')
+                    if prior.get('result') is not None:return prior['result']
+                    raise ValueError('上次服务操作可能已经完成，请先读取实际记录；不要重复创建任务或证据')
+                db.write_text_atomic(record,encoded({'fingerprint':fingerprint,'status':'started'}))
+                from study_agent.cli import main as service_main
+                output=io.StringIO();previous=Path.cwd()
+                try:
+                    os.chdir(self.root)
+                    with redirect_stdout(output),redirect_stderr(output):
+                        try:code=service_main(['--db',str(self.root/'.study-system/data/task_memory.sqlite3'),'--json',*arguments])
+                        except SystemExit as stopped:code=stopped.code or 0
+                finally:os.chdir(previous)
+                value=output.getvalue()
+                if code:raise ValueError(value.strip() or '学习服务未完成，请先核对实际记录')
+                try:result={'data':json.loads(value)}
+                except ValueError:result={'text':value}
+                db.write_text_atomic(record,encoded({'fingerprint':fingerprint,'status':'completed','result':result}))
+                return result
         try:
             with db.atomic(self.conn):
                 prior = self.conn.execute('SELECT * FROM flow_operations WHERE id=?', (operation,)).fetchone()
