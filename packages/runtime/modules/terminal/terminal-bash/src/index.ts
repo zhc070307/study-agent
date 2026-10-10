@@ -175,6 +175,7 @@ async function rejectAfterStartupCleanup(error: unknown, cleanup: () => Promise<
   try {
     await cleanup()
   } catch (cleanupError: unknown) {
+    if (process.env.STUDY_VERIFY === '1') console.error('PTY verification failure', error, cleanupError)
     throw new TerminalBackendCleanupError(error, cleanupError)
   }
   throw error

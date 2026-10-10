@@ -21,7 +21,7 @@ with tempfile.TemporaryDirectory(prefix='study-profile-loop-') as directory:
         'name': str(project / 'packages/agent/tests/mock-model.ts')}]}]))
     with tempfile.TemporaryFile(mode='w+') as diagnostics:
         process = subprocess.Popen(runtime_command('--patch',str(overlay)),
-            cwd=project, env=dict(os.environ, DSH_HOME=str(root / '.harness')),
+            cwd=project, env=dict(os.environ, DSH_HOME=str(root / '.harness'),STUDY_VERIFY='1'),
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=diagnostics, start_new_session=True)
         selector = selectors.DefaultSelector()
         selector.register(process.stdout, selectors.EVENT_READ)
