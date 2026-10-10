@@ -14,6 +14,11 @@ import { tmpdir } from 'node:os'
 import { expect, it } from 'vitest'
 
 const project = process.env.STUDY_PROJECT!
+function desktop(root: string, action: string, args: object) {
+  return JSON.parse(execFileSync('python3', [join(project, 'packages/agent/workspace.py'), root], {
+    input: JSON.stringify({ action, args }), encoding: 'utf8', timeout: 10000,
+  })).result
+}
 function read(root: string, args: object) {
   return JSON.parse(execFileSync('python3', [join(project, 'packages/agent/worker.py'), root], {
     input: JSON.stringify({ action: 'read', args }), encoding: 'utf8', timeout: 5000,
@@ -24,6 +29,49 @@ function sql(root: string, expression: string) {
 c=sqlite3.connect(sys.argv[1]); c.row_factory=sqlite3.Row
 print(json.dumps(${expression})); c.close()`, join(root, '.study-system/data/task_memory.sqlite3')], { encoding: 'utf8' }))
 }
+it('indexes a real PDF, locates a page and reads its source through the actual assistant tools', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'study-textbook-'))
+  let ctx: Context | undefined
+  try {
+    const original = JSON.parse(execFileSync('python3', ['-c', `import sys,json,base64
+sys.path.insert(0,sys.argv[1]+'/packages/agent')
+from workspace import Workspace
+s=Workspace(sys.argv[2])
+try:
+ print(json.dumps(s.perform('create',{'name':'课程教材.pdf','mime':'application/pdf','data':base64.b64encode(open(sys.argv[1]+'/ui/samples/materials/derivatives.pdf','rb').read()).decode()})))
+finally:s.close()`, project, root], {encoding:'utf8'}))
+    const adapter = new MockAdapter([
+      toolCallResponse('index', 'study_textbook', {action:'index', input:JSON.stringify({file:original.id,expected:original.sha256,title:'课程教材示例'})}),
+      options => {
+        const result = options.messages.filter(message=>message.role==='tool').at(-1)!
+        if (result.isError) throw new Error('Textbook indexing tool failed')
+        expect(desktop(root,'textbook',{action:'status',file:original.id}).ready).toBe(true)
+        return toolCallResponse('find', 'study_textbook', {action:'search', input:JSON.stringify({file:original.id,pdf_start:1,pdf_end:1})})
+      },
+      options => {
+        const result = options.messages.filter(message=>message.role==='tool').at(-1)!
+        if (result.isError) throw new Error('Textbook search tool failed')
+        expect(JSON.stringify(result.content)).toContain('pdf_page')
+        return toolCallResponse('original', 'study_textbook', {action:'read', input:JSON.stringify({file:original.id,pdf_page:1,expected:original.sha256})})
+      },
+      options => {
+        const result = options.messages.filter(message=>message.role==='tool').at(-1)!
+        if (result.isError) throw new Error('Original page text tool failed')
+        expect(JSON.stringify(result.content)).toContain('导数')
+        return textResponse('已定位并读取原页。')
+      },
+    ])
+    const mounted = await mount(root, adapter)
+    ctx = mounted.ctx
+    const handle = await ctx.agents.create({sessionId:SessionId('textbook-lookup'),agentOptions:{provider:'mock',model:'mock'}})
+    try {await turn(ctx,handle.agent)} finally {await handle.dispose()}
+    expect(desktop(root,'textbook',{action:'status',file:original.id}).source.sha256).toBe(original.sha256)
+    expect(sql(root, "c.execute('SELECT count(*) FROM tasks').fetchone()[0]")).toBe(0)
+  } finally {
+    if (ctx) await ctx.fiber.dispose()
+    await rm(root,{recursive:true,force:true})
+  }
+}, 30000)
 async function mount(root: string, adapter: MockAdapter) {
   const ctx = new Context()
   await mountAgentLoopTestDependencies(ctx, { tools: { mode: 'native' } })

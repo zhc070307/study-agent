@@ -53,6 +53,20 @@ export function apply(ctx: Context, config: Config) {
     },
   })))
   ctx.effect(() => ctx.tools.register(defineTool({
+    name: 'study_textbook',
+    description: '统一教材检索：保留原 PDF，按页建立 SQLite 全文索引，关键词定位后再读原页。status 查看当前版本的索引、章节与页码映射；index 建立或更新，expected 使用 list/read 的文件 sha256。同版本只更新映射时复用页文字。教材名称、版本、chapters 和 page_map 必须来自实际标题页、目录和原页，未知时不填；不猜固定页码差。search 按实际语言关键词、章节或页码检索；英文教材的中文问题由你结合语境转成英文术语，不存在自动语义检索。read 读取命中的 PDF 页文字；公式、图形、扫描页仍用 study_desktop page 查看原页，传 expected 校验版本。结果不是完整题面或视觉核验；未命中不等于书中不存在。',
+    parameters: {
+      action: { type: 'string', enum: ['status','index','search','read'], required: true },
+      input: { type: 'string', required: true, description: 'JSON 对象，必填 file，可选 semester。index:{file,expected,title?,edition?,chapters?:[{number:章节编号文字,title,pdf_start,pdf_end}],page_map?:[{pdf_start,pdf_end,book_start:纸书起始页整数}或{pdf_start,label:实际非数字页码}]}；PDF 页码从1开始，各页码映射不能重叠。search:{file,query?:关键词,chapter?:确切编号或标题,book_page?:纸书页码文字,pdf_start?,pdf_end?,limit?:最多30,offset?}；返回引用、版本、PDF/纸书页码、片段和 next_offset。read:{file,pdf_page,expected?,offset?,limit?:最多50000字}。' },
+    }, output,
+    async execute(args, exec) {
+      const input = JSON.parse(args.input)
+      if (!input || Array.isArray(input) || typeof input !== 'object') throw new Error('教材输入必须是对象')
+      return call('textbook', {...input, action: args.action, session: exec.agent?.session.id},
+        `${exec.agent?.session.id ?? 'direct'}:${exec.callId}`, exec.signal, true)
+    },
+  })))
+  ctx.effect(() => ctx.tools.register(defineTool({
     name: 'study_transcribe', description: '可选的本地录音转写工具。已有讲稿或转写稿直接读取，不安装、不转写。check 检查设备资源，资源不足禁止下载；默认检测并使用宿主 GPU，设备不支持时说明检测结果与可直接使用文字稿的选择，不自动使用 CPU。status 查看安装及任务；start 启动或继续，file/expected 使用真实录音身份与哈希。首次 needs_install 时先说明约3.8 GiB模型、实际检测选用的后端及内存/显存/磁盘要求，用户明确同意才 allow_install=true。start 返回后台任务，及时告诉用户正在处理，不循环等待；完成的原稿保存到原录音文件夹。stop 传job停止并保留断点。',
     parameters: {action:{type:'string',enum:['status','check','start','stop'],required:true},input:{type:'string',required:true,description:'JSON对象。status:{}；start:{file,expected,allow_install可选}；stop:{job}。'}},output,
     async execute(args, exec) {

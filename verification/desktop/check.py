@@ -65,7 +65,7 @@ export function apply(ctx){ctx.llm.registerAdapter(['native-check'],new MockAdap
     from pdf_tools import text
     tex=r'''\documentclass[UTF8,fontset=fandol]{ctexart}
 \usepackage{amsmath,amssymb,graphicx,geometry,booktabs,enumitem,xcolor,hyperref,tikz,siunitx,mathtools,tcolorbox,pgfplots}
-\begin{document}中文安装检查：函数 $f(x)=x^2$。\begin{tikzpicture}\draw (0,0)--(1,1);\end{tikzpicture}\end{document}'''
+\begin{document}中文安装检查：函数 $f(x)=x^2$。textbooklookup.\begin{tikzpicture}\draw (0,0)--(1,1);\end{tikzpicture}\end{document}'''
     store=Workspace(root)
     try:
         source=store.perform('create',{'name':'中文笔记.tex','text':tex,'mime':'text/x-tex','course':'DEMO','category':'notes'})
@@ -74,9 +74,15 @@ export function apply(ctx){ctx.llm.registerAdapter(['native-check'],new MockAdap
         pdf=store.file(store.file(source['id'])['pdf']['file'])
         assert '中文安装检查' in text(store.blobs/pdf['sha256'])
         assert store.page({'file':pdf['id'],'page':1})['images'][0]['data']
+        indexed=store.perform('textbook',{'action':'index','file':pdf['id'],'expected':pdf['sha256'],'title':'原生排版示例','page_map':[{'pdf_start':1,'book_start':1}]})
+        assert indexed['ready'] and indexed['searchable_pages']>0
+        matches=store.perform('textbook',{'action':'search','file':pdf['id'],'query':'textbooklookup'})
+        assert matches['results'][0]['book_page']=='1'
+        original=store.perform('textbook',{'action':'read','file':pdf['id'],'pdf_page':1,'expected':pdf['sha256']})
+        assert '中文安装检查' in original['text']
         assert '.settings' not in json.dumps(store.snapshot(),ensure_ascii=False)
     finally:store.close()
     with Semesters(root).export('initial') as data:
         import zipfile
         with zipfile.ZipFile(data) as archive:assert not any(name.startswith(('.settings/','.transcription/')) for name in archive.namelist())
-print('Native SDK, source resolution, course files, UTF-8, memory locks and real Chinese PDF passed; no remote inference.')
+print('Native SDK, source resolution, course files, UTF-8, memory locks, real Chinese PDF and persistent textbook index passed; no remote inference.')

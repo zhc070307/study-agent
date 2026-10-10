@@ -49,3 +49,11 @@ jobs:
         with:
           python-version: '3.12'
       - run: python -m unittest discover -s verification/transcription -p test_device.py -q
+      - name: Textbook PDF extraction dependencies
+        run: python -m pip install pypdfium2==4.30.0 Pillow==11.3.0
+      - name: Native textbook lookup and backup
+        env:
+          STUDY_NATIVE: '1'
+          PYTHONUTF8: '1'
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: python -m unittest discover -s packages/agent/tests -p test_textbooks.py -v

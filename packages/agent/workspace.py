@@ -184,7 +184,10 @@ class Workspace:
             try:
                 return store.perform('create',{'name':args.get('name') or file['name'],'mime':file['mime'],'data':base64.b64encode(self.content(file)).decode(),'folder':args.get('folder'),'kind':file['kind'],'origin':{'semester':self.root.name if self.root.parent.name=='.semesters' else 'initial','file':file['id'],'sha256':file['sha256'],'reason':args['reason']}},operation)
             finally:store.close()
-        if read_only(self.root) and action not in ('list','read','history'):
+        if action == 'textbook':
+            from textbooks import perform
+            return perform(self, args)
+        if read_only(self.root) and action not in ('list','read','history','page'):
             raise ValueError('这个学期已归档，请重新开始后再修改')
         if action == 'list':
             return self.snapshot()
@@ -580,6 +583,7 @@ class Workspace:
     def page(self,args):
         file = self.file(args['file'])
         if file['mime']!='application/pdf': raise ValueError('请选择 PDF')
+        if args.get('expected',file['sha256'])!=file['sha256']:raise ValueError('PDF 版本已变化，请重新读取文件')
         page = args['page']
         if type(page)!=int or page<1: raise ValueError('页码无效')
         with tempfile.TemporaryDirectory() as directory:
@@ -588,7 +592,7 @@ class Workspace:
             else:
                 subprocess.run(['pdftoppm','-f',str(page),'-l',str(page),'-scale-to','1400','-singlefile','-png',str(self.blobs/file['sha256']),str(target)],check=True,capture_output=True,timeout=30)
                 image = target.with_suffix('.png').read_bytes()
-        if file.get('compile'):
+        if file.get('compile') and not read_only(self.root):
             with db.atomic(self.conn, bump_revision=False): self.conn.execute('INSERT OR IGNORE INTO desktop_views VALUES (?,?)',(file['compile'],page))
         return {'file':file['id'],'page':page,'sha256':file['sha256'],'images':[{'data':base64.b64encode(image).decode(),'mimeType':'image/png'}]}
 

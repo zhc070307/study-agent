@@ -1,6 +1,6 @@
 {
   "name":"study-agent-desktop",
-  "version":"0.1.0",
+  "version":"0.1.1",
   "private":true,
   "description":"课程文件与学习助理",
   "author":"Study Agent contributors",
