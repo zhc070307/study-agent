@@ -3,6 +3,8 @@ import sys
 from pathlib import Path
 import tempfile
 import unittest
+import json
+from unittest.mock import patch
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from workspace import Workspace
@@ -113,5 +115,20 @@ class WorkspaceTests(unittest.TestCase):
     def test_agent_tasks_cannot_be_completed_by_student_checkbox(self):
         task=self.store.tasks.create_task('交付笔记',actor='agent',status='open')
         with self.assertRaises(ValueError):self.store.perform('check_task',{'task':task.id,'done':True})
+
+    def test_compact_snapshot_skips_blob_reads_and_versioned_text_is_still_available(self):
+        files=[self.store.perform('create',{'name':str(n)+'.md','text':'x'*1024*1024}) for n in range(5)]
+        self.store.perform('remove_file',{'file':files[-1]['id'],'expected':files[-1]['sha256']})
+        with patch.object(self.store,'content',side_effect=AssertionError('Polling must not read file blobs')):
+            state=self.store.snapshot(include_text=False)
+        self.assertLess(len(json.dumps(state)),20000)
+        for file in state['files']+state['trash']:
+            self.assertNotIn('text',file)
+            self.assertTrue(file['textual'])
+        self.assertEqual(self.store.perform('read',{'file':files[0]['id'],'expected':files[0]['sha256']})['text'],files[0]['text'])
+        self.store.perform('write',{'file':files[0]['id'],'expected':files[0]['sha256'],'text':'New version'})
+        with self.assertRaises(ValueError):
+            self.store.perform('read',{'file':files[0]['id'],'expected':files[0]['sha256']})
+        self.assertEqual(next(file for file in self.store.snapshot()['files'] if file['id']==files[0]['id'])['text'],'New version')
 
 if __name__=='__main__':unittest.main()

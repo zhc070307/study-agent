@@ -134,9 +134,10 @@ class Workspace:
             temp.replace(path)
         return digest
 
-    def public(self, file):
+    def public(self, file, *, include_text=True):
         result = dict(file, source='/api/file/' + file['id'], url='/api/file/' + file['id'] + '?v=' + file['sha256'])
-        if file['mime'].startswith('text/') or Path(file['name']).suffix.lower() in ('.md', '.markdown', '.tex', '.txt'):
+        result['textual'] = file['mime'].startswith('text/') or Path(file['name']).suffix.lower() in ('.md', '.markdown', '.tex', '.txt')
+        if include_text and result['textual']:
             result['text'] = self.content(file).decode('utf-8', errors='replace')
         return result
 
@@ -144,8 +145,8 @@ class Workspace:
         self.conn.execute('INSERT OR REPLACE INTO desktop_files VALUES (?,?)', (file['id'], encoded(file)))
         self.conn.execute('INSERT INTO desktop_history VALUES (?,?,?)', (uid(), file['id'], encoded(file)))
 
-    def snapshot(self):
-        files = [self.public(json.loads(row[0])) for row in self.conn.execute('SELECT value FROM desktop_files ORDER BY rowid')]
+    def snapshot(self, *, include_text=True):
+        files = [self.public(json.loads(row[0]), include_text=include_text) for row in self.conn.execute('SELECT value FROM desktop_files ORDER BY rowid')]
         trash=[f for f in files if f.get('removed')]
         files=[f for f in files if not f.get('removed')]
         files.sort(key=lambda file: file.get('order', 0))
@@ -193,15 +194,26 @@ class Workspace:
             return self.snapshot()
         if action == 'read':
             file = self.file(args['file'])
+            if args.get('expected', file['sha256']) != file['sha256']:
+                raise ValueError('文件版本已变化，请重新读取')
             result = self.public(file)
             result['stored_path']=str(self.blobs/file['sha256'])
             if file['mime'] == 'application/pdf':
+                offset, limit = args.get('offset', 0), args.get('limit', 100000)
+                if type(offset) is not int or offset < 0 or type(limit) is not int or not 1 <= limit <= 100000:
+                    raise ValueError('PDF 文字起点须为非负整数，每次读取 1 到 100000 字')
                 with tempfile.TemporaryDirectory() as directory:
                     output = Path(directory) / 'text.txt'
-                    if os.environ.get('STUDY_NATIVE')=='1':result['text']=pdf_tools.text(self.blobs/file['sha256'])[:100000]
+                    if os.environ.get('STUDY_NATIVE')=='1':content=pdf_tools.text(self.blobs/file['sha256'])
                     else:
                         subprocess.run(['pdftotext', str(self.blobs/file['sha256']), str(output)], check=True, timeout=30, capture_output=True)
-                        result['text'] = output.read_text(encoding='utf-8')[:100000]
+                        content = output.read_text(encoding='utf-8')
+                if offset > len(content):
+                    raise ValueError('文字起点超出 PDF 内容')
+                end = min(offset + limit, len(content))
+                result.update(text=content[offset:end], characters=len(content), offset=offset,
+                              next_offset=end if end < len(content) else None, truncated=end < len(content),
+                              warning='本次只读取了部分 PDF 文字，请用 next_offset 继续，或通过教材索引及原页定位。' if end < len(content) else None)
             if file['mime'] in ('image/png','image/jpeg','image/webp','image/gif'):
                 result['images']=[{'data':base64.b64encode(self.content(file)).decode(),'mimeType':file['mime']}]
             return result

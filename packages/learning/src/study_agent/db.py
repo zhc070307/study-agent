@@ -246,6 +246,7 @@ def write_text_atomic(path: os.PathLike, text: str) -> Path:
         handle = tempfile.NamedTemporaryFile(
             "w",
             encoding="utf-8",
+            newline="\n",
             dir=str(target.parent),
             prefix="." + target.name + ".",
             suffix=".tmp",

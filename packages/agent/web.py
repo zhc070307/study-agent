@@ -265,7 +265,7 @@ class Handler(BaseHTTPRequestHandler):
                             self.server.root=root
                             self.server.runtime=Runtime(root,**self.server.runtime_options)
                 store=Workspace(self.server.root)
-                state=store.snapshot()
+                state=store.snapshot(include_text=False)
                 state['semesters']=self.server.semesters.load()
                 state['runtime']={'active':self.server.runtime.active,'status':self.server.runtime.status,'error':self.server.runtime.error}
                 state['transcription']=Transcription(self.server.root).status()
