@@ -11,7 +11,7 @@ PROJECT = Path(__file__).resolve().parents[2]
 RUNTIME = PROJECT / 'packages/runtime'
 
 def runtime_command(*args):
-    imports=['--import',str(RUNTIME/'launcher/workspace-loader.mjs')] if os.environ.get('STUDY_NATIVE')=='1' else []
+    imports=['--import',(RUNTIME/'launcher/workspace-loader.mjs').as_uri()] if os.environ.get('STUDY_NATIVE')=='1' else []
     return [os.environ.get('STUDY_NODE','node'),*imports,'--import','tsx/esm',str(RUNTIME/'launcher/main.ts'),*args]
 
 

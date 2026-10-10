@@ -45,7 +45,9 @@ export function apply(ctx){ctx.llm.registerAdapter(['native-check'],new MockAdap
 """,encoding='utf-8')
     runtime=Runtime(root,provider='native-check',model='mock',extra_patch=[{'insert':[{'id':'native-check','name':str(model)}]}])
     try:
-        runtime.prompt({'id':uuid.uuid4().hex,'channel':'desktop','text':'检查原生学习工具','files':[]})
+        try:runtime.prompt({'id':uuid.uuid4().hex,'channel':'desktop','text':'检查原生学习工具','files':[]})
+        except Exception:
+            runtime.diagnostics.seek(0);print(runtime.diagnostics.read(),file=sys.stderr);raise
         deadline=time.monotonic()+60
         while runtime.status=='running' and time.monotonic()<deadline:time.sleep(.1)
         if runtime.status!='idle' or runtime.error:

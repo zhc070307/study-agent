@@ -17,6 +17,7 @@ sys.path.insert(0,str(PROJECT/'packages/transcription'))
 from workspace import Workspace
 from semesters import Semesters
 from settings import Settings
+from worker import Store
 from agreements import save,read_all
 from transcription import NativeTranscription
 from host import Service,Handler,ThreadingHTTPServer,write
@@ -92,6 +93,22 @@ class NativeTests(unittest.TestCase):
             finally:restored.close()
             self.assertEqual(store.content(store.file(note['id'])),'保留内容'.encode())
         finally:store.close()
+    def test_shared_agent_memory_survives_semester_change_without_course_progress(self):
+        library=Semesters(self.root)
+        old=Store(self.root)
+        try:
+            memory=old.agent_memory()
+            old.execute({'action':'memory_save','args':{'content':'用简洁的中文沟通；只是参考，当前要求优先。','expected':memory['content_hash'],'summary':'用户明确提出的沟通偏好'},'id':'shared-memory'})
+            result=library.change('create',{'name':'下学期','expected':0,'reason':'用户准备开始下学期'})
+            new=Store(library.directory(result['created']))
+            try:
+                self.assertEqual(new.agent_memory()['content'],old.agent_memory()['content'])
+                self.assertEqual(new.read({})['courses'],[])
+                self.assertFalse((new.root/'.study-system/AGENT_MEMORY.md').exists())
+                with library.export('initial') as backup:
+                    with zipfile.ZipFile(backup) as archive:self.assertIn('当前要求优先',json.loads(archive.read('semester.json'))['agent_memory'])
+            finally:new.conn.close()
+        finally:old.conn.close()
     def test_invalid_backup_cannot_escape_or_leave_partial_semester(self):
         library=Semesters(self.root)
         for name in ('../escape','C:/escape','.settings/config.json'):
