@@ -232,6 +232,7 @@ class Workspace:
             import re
             code=str(args.get('code') or 'C'+uid()[:12]).upper()
             if not re.fullmatch(r'[A-Z0-9][A-Z0-9_-]{0,39}',code):raise ValueError('课程内部标识无效')
+            if self.storage_name(code)!=code:raise ValueError('课程内部标识与系统保留名称冲突，请换一个标识')
             title=name(args['name'])
             existing=self.conn.execute('SELECT * FROM courses WHERE code=?',(code,)).fetchone()
             if existing and existing['name']!=title:raise ValueError('这个课程标识已被其他课程使用')

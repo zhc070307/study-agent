@@ -23,7 +23,7 @@
       {"from":"../../THIRD_PARTY_NOTICES.md","to":"THIRD_PARTY_NOTICES.md"}
     ],
     "icon":"assets/icon.png",
-    "mac":{"target":["dmg"],"category":"public.app-category.education","hardenedRuntime":true,"identity":null,"minimumSystemVersion":"14.0"},
+    "mac":{"target":["dmg"],"category":"public.app-category.education","hardenedRuntime":true,"identity":"-","minimumSystemVersion":"14.0"},
     "win":{"target":[{"target":"nsis","arch":["x64"]}]},
     "nsis":{"oneClick":false,"perMachine":false,"allowToChangeInstallationDirectory":true,"deleteAppDataOnUninstall":false,"createDesktopShortcut":true},
     "artifactName":"Study-Agent-${version}-${os}-${arch}.${ext}",

@@ -83,6 +83,7 @@ jobs:
             "dist/desktop/win-unpacked/Study Agent.exe"
           else
             packaged_app="$(find dist/desktop -path '*/Contents/MacOS/Study Agent' -type f -print -quit)"
+            codesign --verify --deep --strict "$(dirname "$(dirname "$(dirname "$packaged_app")")")"
             "$packaged_app"
           fi
       - name: Verify runtime inside the packaged app

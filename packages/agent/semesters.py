@@ -174,7 +174,7 @@ class Semesters:
                             if old:
                                 # Relocate recorded work/publication paths, keeping all evidence and identities.
                                 def relocate(value):
-                                    if isinstance(value,str) and (value==old or value.startswith(old+'/') or value.startswith(old+'\\')):return str(target)+value[len(old):]
+                                    if isinstance(value,str) and (value==old or value.startswith(old+'/') or value.startswith(old+'\\')):return str(target)+value[len(old):].replace('\\','/')
                                     if isinstance(value,list):return [relocate(item) for item in value]
                                     if isinstance(value,dict):return {key:relocate(item) for key,item in value.items()}
                                     return value
