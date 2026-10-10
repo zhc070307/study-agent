@@ -39,6 +39,7 @@ jobs:
       - run: docker run --rm study-agent:check python3 packages/agent/tests/profile_loop.py
       - run: STUDY_CHECK_IMAGE=study-agent:check python3 verification/deployment/check.py
   native-device-checks:
+    timeout-minutes: 10
     strategy:
       matrix:
         os: [macos-14, windows-latest]
