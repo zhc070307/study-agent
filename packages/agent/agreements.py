@@ -16,7 +16,7 @@ def library_root(root):
 def read_all(root, course=None):
     root=Path(root)
     def load(path):
-        return json.loads(path.read_text()) if path.exists() else {'version':0,'items':{},'history':[],'operations':{}}
+        return json.loads(path.read_text(encoding='utf-8')) if path.exists() else {'version':0,'items':{},'history':[],'operations':{}}
     general=load(library_root(root)/'.semesters/agreements.json')
     local=load(root/'.study-system/agreements.json')
     relevant=[*general['items'].values(),*[v for v in local['items'].values() if v['scope']=='semester' or v.get('course')==course]]
@@ -34,7 +34,7 @@ def save(root,args,operation):
     path.parent.mkdir(parents=True,exist_ok=True)
     with (path.parent/'agreements.lock').open('a') as lock:
         fcntl.flock(lock,fcntl.LOCK_EX)
-        data=json.loads(path.read_text()) if path.exists() else {'version':0,'items':{},'history':[],'operations':{}}
+        data=json.loads(path.read_text(encoding='utf-8')) if path.exists() else {'version':0,'items':{},'history':[],'operations':{}}
         fingerprint=hashlib.sha256(json.dumps(args,sort_keys=True,ensure_ascii=False).encode()).hexdigest()
         if operation and operation in data['operations']:
             previous=data['operations'][operation]
@@ -62,5 +62,5 @@ def read_only(root):
     path=library_root(root)/'.semesters/index.json'
     if not path.exists():return False
     identifier=root.name if root.parent.name=='.semesters' else 'initial'
-    item=next((i for i in json.loads(path.read_text())['items'] if i['id']==identifier),None)
+    item=next((i for i in json.loads(path.read_text(encoding='utf-8'))['items'] if i['id']==identifier),None)
     return bool(item and item['status']!='open')

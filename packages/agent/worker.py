@@ -150,7 +150,7 @@ class Store:
         self.recovery_warnings = [] if read_only(self.root) else self.recover_files()
         inherit=inherit and not read_only(self.root)
         with db.atomic(self.conn, bump_revision=False):
-            for flow, definition in json.loads((PROJECT / 'packages/agent/flows.json').read_text()).items():
+            for flow, definition in json.loads((PROJECT / 'packages/agent/flows.json').read_text(encoding='utf-8')).items():
                 validate(definition)
                 version = digest({'flow': flow, 'scope': '*', 'definition': definition})
                 self.conn.execute('INSERT OR IGNORE INTO flow_versions VALUES (?,?,?,?,?,?)',
@@ -184,10 +184,10 @@ class Store:
         if any(item.get('path') == str(path) for item in self.recovery_warnings):
             raise ValueError('此文档存在未解决的中断恢复记录')
         journal = self.root / '.study-system/runtime/changes' / (digest(operation) + '.json')
-        record = json.loads(journal.read_text()) if journal.exists() else {'operation': operation, 'files': []}
+        record = json.loads(journal.read_text(encoding='utf-8')) if journal.exists() else {'operation': operation, 'files': []}
         if any(item['path'] == str(path) for item in record['files']):
             raise ValueError('一次操作不能重复修改同一文档')
-        record['files'].append({'path': str(path), 'before': path.read_text() if path.exists() else None,
+        record['files'].append({'path': str(path), 'before': path.read_text(encoding='utf-8') if path.exists() else None,
                                'after': hashlib.sha256(content.encode()).hexdigest()})
         db.write_text_atomic(journal, encoded(record))
 
@@ -197,13 +197,13 @@ class Store:
         # keeps its new files; an interrupted transaction restores old contents.
         with db.atomic(self.conn, bump_revision=False):
             for journal in (self.root / '.study-system/runtime/changes').glob('*.json'):
-                record = json.loads(journal.read_text())
+                record = json.loads(journal.read_text(encoding='utf-8'))
                 committed = self.conn.execute('SELECT 1 FROM flow_operations WHERE id=?', (record['operation'],)).fetchone()
                 unresolved = False
                 if not committed:
                     for item in record['files']:
                         path = checked_path(self.root, item['path'])
-                        current = path.read_text() if path.exists() else None
+                        current = path.read_text(encoding='utf-8') if path.exists() else None
                         if current == item['before']:
                             continue
                         if current is not None and hashlib.sha256(current.encode()).hexdigest() == item['after']:
@@ -273,7 +273,7 @@ class Store:
         restored=self.root/'.study-system/restored-references.json'
         restored_references=json.loads(restored.read_text(encoding='utf-8')) if restored.exists() else {}
         result = {'legacy_semester_memory':legacy_memory,'restored_references':restored_references,'transcription':transcription,'agreements':read_all(self.root,args.get('course')), 'learning_flows':learning_flows, 'courses': courses, 'memory': memory, 'recovery_warnings': self.recovery_warnings,
-            'flows': {flow: self.active(flow, '*') for flow in json.loads((PROJECT / 'packages/agent/flows.json').read_text())}, 'guide': {
+            'flows': {flow: self.active(flow, '*') for flow in json.loads((PROJECT / 'packages/agent/flows.json').read_text(encoding='utf-8'))}, 'guide': {
             'study_command': [sys.executable, str(PROJECT / 'study-agent'), 'service', '--data', str(self.root)],
             'service_tool': 'study_work action=service, input={arguments:[服务参数]}; 先用 arguments=[--help] 或具体子命令的 --help 查看真实用法，无需终端。',
             'standards': delivery.routes(),
@@ -295,10 +295,10 @@ class Store:
             result['issues'] = [dict(row) for row in self.conn.execute(
                 'SELECT * FROM learning_issues WHERE course_id=? ORDER BY created_at', (course['id'],))]
             result['flows'] = {flow: self.active(flow, course['id']) for flow in json.loads(
-                (PROJECT / 'packages/agent/flows.json').read_text())}
+                (PROJECT / 'packages/agent/flows.json').read_text(encoding='utf-8'))}
             folder = self.learning.course_roots(self.root)[course['id']][1]
             if (folder / 'COURSE.md').exists():
-                result['course_context'] = (folder / 'COURSE.md').read_text()
+                result['course_context'] = (folder / 'COURSE.md').read_text(encoding='utf-8')
                 result['course_state'] = self.learning.course_state_status(course['id'], folder / 'COURSE.md')
             result['assessments'] = [dict(row) for row in self.conn.execute('SELECT * FROM assessment_attempts WHERE course_id=? ORDER BY created_at', (course['id'],))]
             result['retest_results'] = [dict(row) for row in self.conn.execute('SELECT r.* FROM assessment_issue_results r JOIN learning_issues i ON i.id=r.issue_id WHERE i.course_id=? ORDER BY recorded_at', (course['id'],))]
@@ -517,7 +517,7 @@ class Store:
                 return
             run, item = latest
             marker = self.root / '.study-system/runtime/plan-views' / (run['id'] + '.json')
-            if marker.exists() and json.loads(marker.read_text()).get('operation') == item.get('operation'):
+            if marker.exists() and json.loads(marker.read_text(encoding='utf-8')).get('operation') == item.get('operation'):
                 return
             result = item['result']
             if (self.root / 'TODAY_WORKING.md').exists() and (self.root / '.study-system/runtime/views/TODAY_WORKING.state.json').exists():
@@ -537,7 +537,7 @@ class Store:
             revision = db.planning_revision(self.conn)
             folder = self.root / '.study-system/backups'
             target, marker = folder / 'latest.sqlite3', folder / 'latest.state.json'
-            if target.exists() and marker.exists() and json.loads(marker.read_text()).get('revision') == revision:
+            if target.exists() and marker.exists() and json.loads(marker.read_text(encoding='utf-8')).get('revision') == revision:
                 return
             source = sqlite3.connect((self.root / '.study-system/data/task_memory.sqlite3').as_uri() + '?mode=ro', uri=True)
             try:
@@ -594,7 +594,7 @@ def plan(store, run, step, inputs, operation):
     proposal = text(inputs.get('plan'), '选题草案')
     path = store.root / '.study-system/PRACTICE_SELECTION.md'
     path.parent.mkdir(parents=True, exist_ok=True)
-    content = path.read_text() if path.exists() else ''
+    content = path.read_text(encoding='utf-8') if path.exists() else ''
     section = '## ' + course['code'] + '\n\n' + proposal + '\n\n错点依据：' + ', '.join(selected) + '\n'
     headings = list(re.finditer(r'^## (.+)$', content, re.M))
     for index, match in enumerate(headings):
@@ -608,7 +608,7 @@ def plan(store, run, step, inputs, operation):
     work = store.root / '.study-system/runtime' / run['id']
     marker = work / '.delivery.json'
     if marker.exists():
-        saved = json.loads(marker.read_text())
+        saved = json.loads(marker.read_text(encoding='utf-8'))
         if saved['preparation'] != section.strip() or saved['course_sha256'] != delivery.digest(store.root / course['code'] / 'COURSE.md'):
             raise ValueError('已有写作准备不同，请重新开始，保留原准备记录')
     else:

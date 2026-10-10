@@ -1,5 +1,6 @@
 """Check the exact staged native runtime on its target platform, without remote inference."""
 import argparse
+import base64
 import json
 import os
 from pathlib import Path
@@ -11,7 +12,8 @@ import uuid
 SOURCE=Path(__file__).resolve().parents[2]
 parser=argparse.ArgumentParser();parser.add_argument('--runtime',type=Path,default=SOURCE);args=parser.parse_args()
 PROJECT=args.runtime.resolve()
-os.environ.update(STUDY_NATIVE='1',STUDY_NODE=str(PROJECT/('node.exe' if os.name=='nt' else 'node')) if (PROJECT/('node.exe' if os.name=='nt' else 'node')).exists() else 'node')
+bundled_node=PROJECT/('node.exe' if os.name=='nt' else 'node')
+os.environ.update(STUDY_NATIVE='1',STUDY_NODE=str(bundled_node) if bundled_node.exists() else os.environ.get('STUDY_NODE','node'))
 sys.path.insert(0,str(PROJECT/'packages/agent'))
 from workspace import Workspace
 from web import Runtime
@@ -68,7 +70,7 @@ export function apply(ctx){ctx.llm.registerAdapter(['native-check'],new MockAdap
 \begin{document}中文安装检查：函数 $f(x)=x^2$。textbooklookup.\begin{tikzpicture}\draw (0,0)--(1,1);\end{tikzpicture}\end{document}'''
     store=Workspace(root)
     try:
-        source=store.perform('create',{'name':'中文笔记.tex','text':tex,'mime':'text/x-tex','course':'DEMO','category':'notes'})
+        source=store.perform('create',{'name':'中文笔记.tex','data':base64.b64encode(tex.encode('utf-16')).decode(),'mime':'text/x-tex','course':'DEMO','category':'notes'})
         result=store.compile({'file':source['id'],'expected':source['sha256']},'native-pdf')
         assert result['ok'],result['log']
         pdf=store.file(store.file(source['id'])['pdf']['file'])
@@ -80,9 +82,30 @@ export function apply(ctx){ctx.llm.registerAdapter(['native-check'],new MockAdap
         assert matches['results'][0]['book_page']=='1'
         original=store.perform('textbook',{'action':'read','file':pdf['id'],'pdf_page':1,'expected':pdf['sha256']})
         assert '中文安装检查' in original['text']
+        practice=store.perform('create',{'name':'练习.md','text':'求函数的导数。','kind':'practice','course':'DEMO','sources':[pdf['id']]})
+        store.perform('answer',{'file':practice['id'],'text':'独立作答：2x。'})
+        task=store.perform('task',{'title':'完成独立练习','file':practice['id'],'date':''})
+        store.perform('check_task',{'task':task['id'],'done':True})
+        store.perform('metadata',{'expected':store.version(),'files':[{'id':practice['id'],'name':'中文练习修订.md'}]})
+        store.perform('remove_file',{'file':practice['id'],'expected':practice['sha256']})
+        store.perform('restore_file',{'file':practice['id'],'expected':practice['sha256']})
         assert '.settings' not in json.dumps(store.snapshot(),ensure_ascii=False)
+        before=store.snapshot()
     finally:store.close()
-    with Semesters(root).export('initial') as data:
+    library=Semesters(root)
+    with library.export('initial') as data:
         import zipfile
         with zipfile.ZipFile(data) as archive:assert not any(name.startswith(('.settings/','.transcription/')) for name in archive.namelist())
+        data.seek(0)
+        imported=library.import_backup(data,library.load()['version'])
+    restored=Workspace(library.directory(imported['id']))
+    try:
+        state=restored.snapshot()
+        assert state['answers']==before['answers'] and state['tasks']==before['tasks']
+        assert [(f['id'],f['sha256']) for f in state['files']]==[(f['id'],f['sha256']) for f in before['files']]
+        assert restored.perform('textbook',{'action':'search','file':pdf['id'],'query':'中文安装检查'})['results']
+        assert library.load()['active']=='initial'
+        assert restored.conn.execute('PRAGMA integrity_check').fetchone()[0]=='ok'
+        assert not restored.conn.execute('PRAGMA foreign_key_check').fetchall()
+    finally:restored.close()
 print('Native SDK, source resolution, course files, UTF-8, memory locks, real Chinese PDF and persistent textbook index passed; no remote inference.')

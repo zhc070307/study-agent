@@ -37,7 +37,7 @@ class Service:
     def version(self):
         return hashlib.sha256(b''.join((SOURCE/name).read_bytes() for name in ('SOURCE.json','requirements.txt'))+str(self.cpu).encode()).hexdigest()
     def ready(self):
-        try:return self.python.exists() and json.loads((self.root/'installed.json').read_text())['runtime']==self.version()
+        try:return self.python.exists() and json.loads((self.root/'installed.json').read_text(encoding='utf-8'))['runtime']==self.version()
         except (OSError,ValueError,KeyError):return False
     def resources(self):return check(self.root,self.cpu,self.ready())
     def status(self):return {'installed':self.ready(),'resources':self.resources()}
@@ -108,7 +108,7 @@ class Service:
                     if event.get('type')=='progress':update(message=event.get('message','正在转写'),progress=event.get('progress'))
                 if self.active!=job['id']:raise InterruptedError()
                 if child.wait()!=0:raise RuntimeError('GPU 转写未完成；请检查驱动、可用内存、模型下载或录音格式；没有自动改用 CPU')
-                result=json.loads((directory/'result.json').read_text());text=Path(result['raw_transcript']).read_text(encoding='utf-8')
+                result=json.loads((directory/'result.json').read_text(encoding='utf-8'));text=Path(result['raw_transcript']).read_text(encoding='utf-8')
                 if not text.strip():raise RuntimeError('没有识别到文字')
                 update(status='completed',message='转写完成',text=text)
         except InterruptedError:update(status='stopped',message='已停止，完成片段保留，可以继续')
@@ -160,7 +160,7 @@ def main():
     print(resources['message'],flush=True)
     if not resources['eligible']:raise SystemExit('设备检查未通过，没有下载转写环境或模型。已有文字稿可以直接上传。')
     config=PROJECT/'.local-tools/transcription.json'
-    try:token=json.loads(config.read_text())['token']
+    try:token=json.loads(config.read_text(encoding='utf-8'))['token']
     except (OSError,ValueError,KeyError):token=secrets.token_urlsafe(32)
     server=ThreadingHTTPServer(('0.0.0.0',args.port),Handler);server.daemon_threads=True;server.service=service;server.token=token
     try:write(config,{'url':f'http://host.docker.internal:{args.port}','token':token})

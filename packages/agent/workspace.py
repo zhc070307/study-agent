@@ -1,6 +1,8 @@
 """Persistent desktop over the existing ledger; immutable file versions and real PDFs."""
 from __future__ import annotations
 import base64
+import codecs
+import unicodedata
 import hashlib
 import json
 import mimetypes
@@ -93,6 +95,12 @@ class Workspace:
             if not previous.is_relative_to(self.root) or previous.is_relative_to(self.blobs):
                 warnings.append('旧文件路径变化，保留恢复记录');continue
             if previous.exists():
+                target=self.root/row['destination']
+                if target.exists() and previous.samefile(target):
+                    try:previous.rename(target)
+                    except OSError:
+                        warnings.append('文件名称未能更新，原件已保留：'+row['path']);continue
+                    self.conn.execute('DELETE FROM desktop_retirements WHERE path=?',(row['path'],));continue
                 if not previous.is_file() or hashlib.sha256(previous.read_bytes()).hexdigest()!=row['sha256']:
                     warnings.append('移动前的原文件已在软件外修改，另行保留：'+row['path']);continue
                 try:previous.unlink()
@@ -138,8 +146,23 @@ class Workspace:
         result = dict(file, source='/api/file/' + file['id'], url='/api/file/' + file['id'] + '?v=' + file['sha256'])
         result['textual'] = file['mime'].startswith('text/') or Path(file['name']).suffix.lower() in ('.md', '.markdown', '.tex', '.txt')
         if include_text and result['textual']:
-            result['text'] = self.content(file).decode('utf-8', errors='replace')
+            try:
+                result['text'] = self.text_content(file)
+            except ValueError as error:
+                result['text_error'] = str(error)
         return result
+
+    def text_content(self, file):
+        content = self.content(file)
+        encoding = 'utf-8-sig'
+        if content.startswith((codecs.BOM_UTF32_LE, codecs.BOM_UTF32_BE)):
+            encoding = 'utf-32'
+        elif content.startswith((codecs.BOM_UTF16_LE, codecs.BOM_UTF16_BE)):
+            encoding = 'utf-16'
+        try:
+            return content.decode(encoding)
+        except UnicodeDecodeError:
+            raise ValueError('无法确认文字编码。原文件已保留；请将文本另存为 UTF-8 后重新上传。') from None
 
     def save_file(self, file):
         self.conn.execute('INSERT OR REPLACE INTO desktop_files VALUES (?,?)', (file['id'], encoded(file)))
@@ -197,6 +220,7 @@ class Workspace:
             if args.get('expected', file['sha256']) != file['sha256']:
                 raise ValueError('文件版本已变化，请重新读取')
             result = self.public(file)
+            if result.get('text_error'):raise ValueError(result['text_error'])
             result['stored_path']=str(self.blobs/file['sha256'])
             if file['mime'] == 'application/pdf':
                 offset, limit = args.get('offset', 0), args.get('limit', 100000)
@@ -438,6 +462,10 @@ class Workspace:
         if existing and existing['course'] and not existing['parent'] and parent:raise ValueError('课程文件夹应位于桌面')
         course=self.folder_course(parent) if parent else existing['course'] if existing else None
         if existing and course!=existing['course']:raise ValueError('跨课程整理请移动文件，保留原课程文件夹')
+        component=category or self.storage_name(name(folder['name']))
+        for sibling in self.conn.execute('SELECT * FROM desktop_folders WHERE parent=? AND id!=?',(parent,identifier)):
+            other=sibling['category'] or self.storage_name(sibling['name'])
+            if self.path_key(component)==self.path_key(other):raise ValueError('此位置已有同名文件夹（不区分大小写），请使用不同名称')
         self.conn.execute('INSERT INTO desktop_folders (id,name,parent,course,category) VALUES (?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,parent=excluded.parent,course=excluded.course,category=excluded.category',(identifier,name(folder['name']),parent,course,category))
 
     def place_file(self,file,args,moving=False):
@@ -498,13 +526,19 @@ class Workspace:
             identifier=folder['parent']
         return '/'.join(parts) or 'materials'
 
+    @staticmethod
+    def path_key(value):
+        return unicodedata.normalize('NFC',value).casefold()
+
     def register_publication(self,file,path):
         relative=Path(path)
         if relative.is_absolute() or '..' in relative.parts:raise ValueError('课程文件位置无效')
         path=relative.as_posix()
-        saved=self.conn.execute('SELECT file FROM desktop_publications WHERE path=?',(path,)).fetchone()
-        if saved and saved['file']!=file['id']:raise ValueError('分类中已有同名成果，请先读取再修订，或使用不同名称')
-        if not saved and (self.root/relative).exists():raise ValueError('此位置已有原文件，请先核对，不能覆盖')
+        matches=[row for row in self.conn.execute('SELECT * FROM desktop_publications') if self.path_key(row['path'])==self.path_key(path)]
+        if any(row['file']!=file['id'] for row in matches):raise ValueError('分类中已有同名成果（不区分大小写），请先读取再修订，或使用不同名称')
+        target=self.root/relative
+        tracked_alias=any((self.root/row['path']).exists() and target.exists() and (self.root/row['path']).samefile(target) for row in matches)
+        if target.exists() and not tracked_alias:raise ValueError('此位置已有原文件，请先核对，不能覆盖')
         for previous in self.conn.execute('SELECT * FROM desktop_publications WHERE file=? AND path!=?',(file['id'],path)).fetchall():
             self.conn.execute('INSERT OR REPLACE INTO desktop_retirements VALUES (?,?,?)',(previous['path'],path,previous['published']))
             self.conn.execute('DELETE FROM desktop_publications WHERE path=?',(previous['path'],))
@@ -537,7 +571,7 @@ class Workspace:
         if args.get('kind') in ('note','worksheet') and not prepared:raise ValueError('正式交付须先 prepare 保存制作依据，再写作')
         work = Path(prepared['work']) if prepared else self.root / '.study-system/runtime' / ('compile-'+identifier)
         work.mkdir(parents=True,exist_ok=True)
-        (work/'main.tex').write_bytes(self.content(file))
+        (work/'main.tex').write_text(self.text_content(file),encoding='utf-8')
         # Explicit companion files only. Never infer dependencies or read personal data.
         for item in args.get('assets',[]):
             asset = self.file(item['file'])

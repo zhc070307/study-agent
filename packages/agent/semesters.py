@@ -11,6 +11,7 @@ import uuid
 import zipfile
 import shutil
 import stat
+import unicodedata
 from pathlib import PurePosixPath
 
 class Semesters:
@@ -22,7 +23,7 @@ class Semesters:
             self.save({'version':0,'active':'initial','items':[{'id':'initial','name':'当前学期','status':'open'}]})
 
     def load(self):
-        return json.loads(self.path.read_text())
+        return json.loads(self.path.read_text(encoding='utf-8'))
 
     def save(self, value):
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -109,7 +110,7 @@ class Semesters:
     def export(self, identifier):
         """Quiescent server + SQLite backup; exclude credentials and transient compiler work."""
         root=self.directory(identifier)
-        output=tempfile.SpooledTemporaryFile(max_size=8*1024*1024)
+        output=tempfile.TemporaryFile()
         with zipfile.ZipFile(output,'w',zipfile.ZIP_DEFLATED) as archive:
             from agreements import read_all
             memory=self.root/'.semesters/shared/.study-system/AGENT_MEMORY.md'
@@ -156,11 +157,17 @@ class Semesters:
                 if not isinstance(manifest,dict) or manifest.get('format')!=1:raise ValueError('备份格式暂不支持，请使用与备份匹配的应用版本')
                 title=str(manifest.get('name','')).strip()
                 if not title or len(title)>80:raise ValueError('备份中的学期名称无效')
-                seen=set()
+                seen=set();components={}
                 for entry in entries:
                     path=PurePosixPath(entry.filename)
                     if entry.filename in seen:raise ValueError('备份含有重复文件')
                     seen.add(entry.filename)
+                    # Windows 和默认 macOS 文件系统会将大小写不同的名称视为同一路径。
+                    for length in range(1,len(path.parts)+1):
+                        prefix='/'.join(path.parts[:length])
+                        key=unicodedata.normalize('NFC',prefix).casefold()
+                        if key in components and components[key]!=prefix:raise ValueError('备份含有大小写或 Unicode 等价的同名路径，无法安全恢复')
+                        components[key]=prefix
                     if path.is_absolute() or '..' in path.parts or '\\' in entry.filename or ':' in entry.filename or stat.S_ISLNK(entry.external_attr>>16):raise ValueError('备份中含有无效文件路径')
                     if any(part in ('.settings','.harness','.semesters','.transcription') or part.startswith(('.env','credentials')) for part in path.parts):raise ValueError('备份不应包含私有配置或运行环境')
                 try:

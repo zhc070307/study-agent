@@ -69,6 +69,11 @@ jobs:
           if [ "$RUNNER_OS" = Windows ]; then native_python=.build/desktop-python/python.exe; else native_python=.build/desktop-python/bin/python3; fi
           "$native_python" -X utf8 verification/desktop/check.py --runtime .build/desktop-runtime
           "$native_python" -X utf8 -m unittest discover -s verification/desktop -p 'test_*.py' -q
+      - name: Browser first use with staged native runtime
+        shell: bash
+        run: |
+          node .build/desktop-runtime/node_modules/playwright/cli.js install chromium
+          node -e "const p=require('node:path');process.env.STUDY_TEST_RUNTIME=p.resolve('.build/desktop-runtime');process.env.STUDY_TEST_PYTHON=p.resolve('.build/desktop-python',process.platform==='win32'?'python.exe':'bin/python3');process.env.STUDY_UI_PLAYWRIGHT_MODULE=p.join(process.env.STUDY_TEST_RUNTIME,'node_modules/playwright');require('./verification/ui/first-use.cjs')"
       - name: Build installer
         shell: bash
         env:
@@ -130,6 +135,11 @@ jobs:
           $installPath = "$env:RUNNER_TEMP\学习桌面\Study Agent install test"
           & "$installPath\resources\python\python.exe" -X utf8 verification/desktop/check.py --runtime "$installPath\resources\runtime"
           if ($LASTEXITCODE -ne 0) { throw 'Installed runtime failed' }
+          $env:STUDY_TEST_RUNTIME = "$installPath\resources\runtime"
+          $env:STUDY_TEST_PYTHON = "$installPath\resources\python\python.exe"
+          $env:STUDY_UI_PLAYWRIGHT_MODULE = "$installPath\resources\runtime\node_modules\playwright"
+          & "$installPath\resources\runtime\node.exe" verification/ui/first-use.cjs
+          if ($LASTEXITCODE -ne 0) { throw 'Installed browser first use failed' }
       - name: Uninstall Windows app and retain learning files
         if: runner.os == 'Windows'
         timeout-minutes: 3
@@ -161,6 +171,7 @@ jobs:
           codesign --verify --deep --strict "$installed_app"
           "$installed_app/Contents/MacOS/Study Agent"
           "$installed_app/Contents/Resources/python/bin/python3" -X utf8 verification/desktop/check.py --runtime "$installed_app/Contents/Resources/runtime"
+          STUDY_TEST_RUNTIME="$installed_app/Contents/Resources/runtime" STUDY_TEST_PYTHON="$installed_app/Contents/Resources/python/bin/python3" STUDY_UI_PLAYWRIGHT_MODULE="$installed_app/Contents/Resources/runtime/node_modules/playwright" "$installed_app/Contents/Resources/runtime/node" verification/ui/first-use.cjs
           codesign --verify --deep --strict "$installed_app"
       - uses: actions/upload-artifact@v7.0.2
         with:

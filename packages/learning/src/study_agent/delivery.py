@@ -71,7 +71,7 @@ def prepare(root, work, course, kind, input_path):
 def accept(root, work, artifact, receipt, review):
     root, work = _work(root, work)
     marker = work / '.delivery.json'
-    record = json.loads(marker.read_text())
+    record = json.loads(marker.read_text(encoding='utf-8'))
     artifact, receipt = Path(artifact).resolve(), Path(receipt).resolve()
     runtime = root / '.study-system/runtime'
     if not artifact.is_relative_to(root) or artifact.is_relative_to(runtime) or not artifact.is_file() or not artifact.stat().st_size:
@@ -106,7 +106,7 @@ def accept(root, work, artifact, receipt, review):
         raise ValueError('Unresolved page review; revise and inspect again')
     if review.get('artifact_sha256') != digest(artifact):
         raise ValueError('Review must name the actual final artifact hash')
-    result = json.loads(receipt.read_text()) if receipt.exists() else {}
+    result = json.loads(receipt.read_text(encoding='utf-8')) if receipt.exists() else {}
     persistent = {key: value for key, value in record.items() if key != 'input_path'}
     result['delivery_review'] = dict(persistent, accepted=True, review=review,
                                    artifact=str(artifact.relative_to(root)), artifact_sha256=digest(artifact))
@@ -121,7 +121,7 @@ def verify_prepared(work, artifact, receipt):
     marker = Path(work) / '.delivery.json'
     if not marker.exists():
         return  # Legacy work and non-learning system artifacts retain their contract.
-    record = json.loads(marker.read_text())
+    record = json.loads(marker.read_text(encoding='utf-8'))
     if not record.get('accepted') or record.get('artifact') != str(Path(artifact).resolve()) or record.get('receipt') != str(Path(receipt).resolve()):
         raise ValueError('Prepared learning delivery must be accepted before cleanup')
     if record['artifact_sha256'] != digest(artifact) or record['receipt_sha256'] != digest(receipt):

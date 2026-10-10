@@ -26,19 +26,19 @@ GIB = 1024**3
 
 def memory_available():
     # Docker allocation is the limit; reclaimable cache is available to inference.
-    info={line.split(':')[0]:int(line.split()[1])*1024 for line in Path('/proc/meminfo').read_text().splitlines() if line.split(':')[0] in ('MemAvailable','MemTotal')}
+    info={line.split(':')[0]:int(line.split()[1])*1024 for line in Path('/proc/meminfo').read_text(encoding='utf-8').splitlines() if line.split(':')[0] in ('MemAvailable','MemTotal')}
     available=info['MemAvailable']
     limit=Path('/sys/fs/cgroup/memory.max')
-    if limit.exists() and limit.read_text().strip()!='max':
+    if limit.exists() and limit.read_text(encoding='utf-8').strip()!='max':
         base=limit.parent
-        values=dict(line.split() for line in (base/'memory.stat').read_text().splitlines())
+        values=dict(line.split() for line in (base/'memory.stat').read_text(encoding='utf-8').splitlines())
         reclaimable=int(values.get('inactive_file',0))+int(values.get('slab_reclaimable',0))
-        available=min(available,max(0,int(limit.read_text())-int((base/'memory.current').read_text())+reclaimable))
+        available=min(available,max(0,int(limit.read_text(encoding='utf-8'))-int((base/'memory.current').read_text(encoding='utf-8'))+reclaimable))
     else:
         base=Path('/sys/fs/cgroup/memory')
         if (base/'memory.limit_in_bytes').exists():
-            values=dict(line.split() for line in (base/'memory.stat').read_text().splitlines())
-            available=min(available,max(0,int((base/'memory.limit_in_bytes').read_text())-int((base/'memory.usage_in_bytes').read_text())+int(values.get('total_inactive_file',0))))
+            values=dict(line.split() for line in (base/'memory.stat').read_text(encoding='utf-8').splitlines())
+            available=min(available,max(0,int((base/'memory.limit_in_bytes').read_text(encoding='utf-8'))-int((base/'memory.usage_in_bytes').read_text(encoding='utf-8'))+int(values.get('total_inactive_file',0))))
     return available
 
 
@@ -59,7 +59,7 @@ class Transcription:
         path=Path(os.environ.get('STUDY_TRANSCRIBE_CONFIG','/host-tools/transcription.json'))
         if not path.exists():path=PROJECT/'.local-tools/transcription.json'
         try:
-            config=json.loads(path.read_text())
+            config=json.loads(path.read_text(encoding='utf-8'))
             if not config['url'].startswith(('http://host.docker.internal:','http://127.0.0.1:')) or not config['token']:return None
             return config
         except (OSError,ValueError,KeyError):return None
@@ -79,7 +79,7 @@ class Transcription:
         except (OSError,ValueError):raise RuntimeError('转写服务暂时不可用，请重新打开应用后再试；原录音保留，不会自动改用 CPU' if os.environ.get('STUDY_NATIVE')=='1' else '无法连接本机转写后台；请启动它或检查本机防火墙，不会自动改用 CPU') from None
 
     def host_status(self):
-        if time.monotonic()-self._host_checked>2:
+        if self._host_status is None or time.monotonic()-self._host_checked>2:
             self._host_checked=time.monotonic()
             try:self._host_status=self.host_request('/status')
             except RuntimeError as error:self._host_status={'installed':False,'resources':{'eligible':False,'backend':None,'gpu_required':True,'message':str(error)}}
@@ -88,7 +88,7 @@ class Transcription:
     def ready(self):
         if self.host_config():return self.host_status()['installed']
         marker=self.shared/'installed.json'
-        try: return self.python.is_file() and json.loads(marker.read_text()).get('runtime')==self.version()
+        try: return self.python.is_file() and json.loads(marker.read_text(encoding='utf-8')).get('runtime')==self.version()
         except (OSError,ValueError): return False
 
     def version(self):
@@ -116,7 +116,7 @@ class Transcription:
         result=[]
         for path in sorted(self.jobs.glob('*/job.json')):
             try:
-                job=json.loads(path.read_text())
+                job=json.loads(path.read_text(encoding='utf-8'))
                 if job['status']=='running':
                     try:
                         # The inherited lock, not a reusable PID, establishes worker ownership.
@@ -182,9 +182,16 @@ class Transcription:
         # Verify the process belongs to this exact job before signalling its group.
         try:
             command=Path('/proc')/str(job['pid'])/'cmdline'
-            if job['id'].encode() not in command.read_bytes().split(b'\0'): raise ValueError('转写进程已变化，请刷新')
+            if sys.platform=='darwin':
+                result=subprocess.run(['ps','-p',str(job['pid']),'-o','command='],capture_output=True,encoding='utf-8',timeout=5)
+                if result.returncode!=0:return {'id':job['id'],'status':'stopping','message':'转写进程已退出，请刷新'}
+                tokens=result.stdout.split()
+                owned=job['id'] in tokens and '--run' in tokens
+            else:
+                owned=job['id'].encode() in command.read_bytes().split(b'\0')
+            if not owned:raise ValueError('转写进程已变化，请刷新')
             os.killpg(job['pid'],signal.SIGTERM)
-        except ProcessLookupError: pass
+        except (ProcessLookupError,FileNotFoundError): pass
         return {'id':job['id'],'status':'stopping','message':'正在停止；已完成片段保留'}
 
 
@@ -292,7 +299,7 @@ def run_cpu(tool,directory,path,env,update):
             if event.get('type')=='progress': update(message=event.get('message','正在转写'),progress=event.get('progress'))
         if child.wait()!=0: raise RuntimeError('录音转写未完成；检查模型下载网络、可用内存或录音格式后可以继续')
         child.stdout.close();child=None
-        result=json.loads((directory/'result.json').read_text())
+        result=json.loads((directory/'result.json').read_text(encoding='utf-8'))
         text=Path(result['raw_transcript']).read_text(encoding='utf-8')
         if not text.strip(): raise RuntimeError('没有识别到可保存的文字')
         return text
@@ -307,10 +314,10 @@ def run_cpu(tool,directory,path,env,update):
 def run_job(root,identifier,global_fd,worker_fd):
     tool=Transcription(root);directory=tool.jobs/identifier;path=directory/'job.json'
     for unused in range(100):
-        job=json.loads(path.read_text())
+        job=json.loads(path.read_text(encoding='utf-8'))
         if job.get('pid'): break
         time.sleep(0.05)
-    job=json.loads(path.read_text())
+    job=json.loads(path.read_text(encoding='utf-8'))
     def update(**changes):
         job.update(changes);atomic(path,job)
     def stop(*unused): raise InterruptedError('转写已停止')
