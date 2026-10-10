@@ -40,6 +40,7 @@ with tempfile.TemporaryDirectory(prefix='study-native-') as temporary:
 export const name='native-check';export const inject=['llm'];
 export function apply(ctx){ctx.llm.registerAdapter(['native-check'],new MockAdapter([
  toolCallResponse('standard','study_read',{standard:'note'}),
+ toolCallResponse('service','study_work',{action:'service',input:JSON.stringify({arguments:['task','--help']})}),
  toolCallResponse('course','study_desktop',{action:'course',input:JSON.stringify({code:'DEMO',name:'原生课程'})}),
  textResponse('原生运行检查完成')
 ]));}

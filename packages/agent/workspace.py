@@ -535,8 +535,13 @@ class Workspace:
         try:
             if os.environ.get('STUDY_NATIVE')=='1':
                 for unused in range(3):
-                    result=subprocess.run(['xelatex','-interaction=nonstopmode','-halt-on-error','-no-shell-escape','main.tex'],cwd=work,env=env,capture_output=True,timeout=30)
+                    result=subprocess.run(['xelatex','-no-pdf','-interaction=nonstopmode','-halt-on-error','-no-shell-escape','main.tex'],cwd=work,env=env,capture_output=True,timeout=30)
                     if result.returncode:break
+                if not result.returncode:
+                    # Invoke the driver ourselves: XeTeX's shell command breaks inside
+                    # an app path such as "Study Agent.app" or Windows Program Files.
+                    driver=subprocess.run(['xdvipdfmx','-o','main.pdf','main.xdv'],cwd=work,env=env,capture_output=True,timeout=30)
+                    driver.stdout=result.stdout+driver.stdout;driver.stderr=result.stderr+driver.stderr;result=driver
             else:result = subprocess.run(['latexmk','-norc','-xelatex','-interaction=nonstopmode','-halt-on-error','-no-shell-escape','main.tex'],cwd=work,env=env,capture_output=True,timeout=90)
             log = (result.stdout+result.stderr).decode(errors='replace')[-20000:]
             ok = result.returncode==0 and (work/'main.pdf').is_file()
