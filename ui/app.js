@@ -494,7 +494,7 @@ $('#file-trash').addEventListener('click',()=>showPicker('恢复文件',removedF
 let settingsChecked=false;
 async function openSettings(first=false){
   const settings=await api('/api/settings');
-  showPicker(first?'开始使用':'设置',`<p class="picker-note">填写 DeepSeek 的服务密钥，让助理回答问题。文件整理与阅读无需先填写。</p><label class="settings-label">模型服务密钥<input id="model-key" class="picker-input" type="password" autocomplete="off" placeholder="${settings.configured?'已保存；留空保留现有密钥':'填写你的密钥'}"></label><a class="text-button" href="https://platform.deepseek.com/api_keys" target="_blank" rel="noopener">获取密钥</a><label class="settings-label">助理模型<select id="model-choice" class="picker-input"><option value="deepseek-flash">DeepSeek Flash</option><option value="deepseek-pro">DeepSeek Pro</option></select></label>`,async()=>{
+  showPicker(first?'开始使用':'设置',`<p class="picker-note">填写 DeepSeek 的服务密钥，让助理回答问题。阅读文件、手动整理无需先填写。</p><label class="settings-label">模型服务密钥<input id="model-key" class="picker-input" type="password" autocomplete="off" placeholder="${settings.configured?'已保存；留空保留现有密钥':'填写你的密钥'}"></label><a class="text-button" href="https://platform.deepseek.com/api_keys" target="_blank" rel="noopener">获取密钥</a><label class="settings-label">助理模型<select id="model-choice" class="picker-input"><option value="deepseek-flash">DeepSeek Flash</option><option value="deepseek-v4-pro">DeepSeek V4 Pro（文本）</option></select></label>`,async()=>{
     try{await api('/api/settings',{api_key:$('#model-key').value,model:$('#model-choice').value,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone});$('#model-key').value='';toast('设置已保存');}catch(error){toast(error.message);}
   });
   $('#model-choice').value=settings.model;

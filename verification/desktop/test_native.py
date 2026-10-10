@@ -32,7 +32,7 @@ class NativeTests(unittest.TestCase):
             settings=Settings(self.root)
             self.assertFalse(settings.status()['configured'])
             settings.save({'api_key':'private-test-key','model':'deepseek-flash','timezone':'Europe/London'})
-            settings.save({'api_key':'','model':'deepseek-pro','timezone':'Europe/London'})
+            settings.save({'api_key':'','model':'deepseek-v4-pro','timezone':'Europe/London'})
             self.assertEqual(settings.load()['api_key'],'private-test-key')
             self.assertNotIn('private-test-key',json.dumps(settings.status()))
             with self.assertRaises(ValueError):settings.save({'timezone':'invalid/timezone'})

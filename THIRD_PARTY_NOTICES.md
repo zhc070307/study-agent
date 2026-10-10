@@ -21,7 +21,9 @@
 
 `pnpm-lock.yaml` 固定实际安装依赖。本仓库不包含 `node_modules` 或预编译原生二进制。下表记录此次核对的安装依赖许可，包括开发与检查依赖；具体版权及完整许可由各依赖包提供。
 
-若以后发布包含依赖的安装包或镜像，应随包保留其许可与声明。图像依赖中的 libvips 使用 LGPL-3.0-or-later，需要保留该库的许可及对应源码提供方式；这些库的许可不要求将本项目自己的全部代码改为 LGPL。MPL 依赖同样须按其条款保留相应文件的许可与源码义务。当前合并的运行源码是 MIT/BSD，未将这些依赖的二进制或源码复制进本仓库。
+桌面安装包包含 Electron、Node.js、Python、TinyTeX、pypdfium2、Pillow、时区数据及 JavaScript 运行依赖，各组件完整许可随其目录保留。PDF 读取采用 pypdfium2 和 PDFium，不包含 PyMuPDF。TinyTeX 包中字体、宏包和排版引擎保留各自许可，不以本项目 MIT 许可替代。
+
+图像依赖中的 libvips 使用 LGPL-3.0-or-later。随包保留其许可、实际组件版本和声明；对应源码及构建脚本由 [sharp-libvips v1.3.2](https://github.com/lovell/sharp-libvips/tree/v1.3.2) 提供，组件来源与版本可在该版本构建脚本和包内 `versions.json` 中核对。这些库的许可不要求将本项目自己的全部代码改为 LGPL；用户可替换安装目录中的相应共享库。MPL 依赖保留相应文件许可及上游源码地址。
 
 | 安装依赖 | 许可 |
 | --- | --- |

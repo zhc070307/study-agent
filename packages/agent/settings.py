@@ -11,7 +11,9 @@ class Settings:
         self.apply()
 
     def load(self):
-        return json.loads(self.path.read_text(encoding='utf-8')) if self.path.exists() else {}
+        value=json.loads(self.path.read_text(encoding='utf-8')) if self.path.exists() else {}
+        if value.get('model')=='deepseek-pro':value['model']='deepseek-v4-pro'
+        return value
 
     def status(self):
         value=self.load()
@@ -30,7 +32,7 @@ class Settings:
         if key:value['api_key']=key
         if not (value.get('api_key') or os.environ.get('DEEPSEEK_API_KEY')):raise ValueError('请先填写模型服务密钥')
         model=args.get('model','deepseek-flash')
-        if model not in ('deepseek-flash','deepseek-pro'):raise ValueError('请选择支持的模型')
+        if model not in ('deepseek-flash','deepseek-v4-pro'):raise ValueError('请选择支持的模型')
         timezone=args.get('timezone','Asia/Hong_Kong')
         try:ZoneInfo(timezone)
         except (KeyError,ValueError):raise ValueError('时区无法识别') from None
