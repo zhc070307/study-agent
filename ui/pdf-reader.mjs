@@ -7,6 +7,7 @@ export function mountPdfReader(host,file) {
   const loading=pdfjs.getDocument({url:file.url,cMapUrl:new URL('./lib/pdfjs/cmaps/',import.meta.url).href,cMapPacked:true,standardFontDataUrl:new URL('./lib/pdfjs/standard_fonts/',import.meta.url).href,wasmUrl:new URL('./lib/pdfjs/wasm/',import.meta.url).href,enableXfa:false,isEvalSupported:false});
   host.innerHTML='<div class="pdf-toolbar"><button data-pdf="previous" aria-label="PDF 上一页">‹</button><label><input class="pdf-page-input" type="number" min="1" aria-label="PDF 页码" value="1"> / <span class="pdf-total">…</span></label><button data-pdf="next" aria-label="PDF 下一页">›</button><span class="toolbar-space"></span><button data-pdf="out" aria-label="PDF 缩小">−</button><span class="pdf-zoom">适合宽度</span><button data-pdf="in" aria-label="PDF 放大">＋</button><button data-pdf="fit">适合宽度</button></div><div class="pdf-pages"><div class="reader-empty">正在打开 PDF…</div></div>';
   const pages=host.querySelector('.pdf-pages');
+  const remember=()=>host.dispatchEvent(new CustomEvent('reader-position',{bubbles:true,detail:{file:file.id}}));
   const observer=new ResizeObserver(()=>{const width=Math.round(host.clientWidth);if(document && width!==lastWidth){lastWidth=width;render();}});
   observer.observe(host);
   function cancelRender(){canvasTask?.cancel();textLayer?.cancel();canvasTask=null;textLayer=null;}
@@ -44,11 +45,11 @@ export function mountPdfReader(host,file) {
     if(action==='out')file.pdfZoom=Math.max(.5,(file.pdfZoom||1)-.15);
     if(action==='in')file.pdfZoom=Math.min(2.5,(file.pdfZoom||1)+.15);
     if(action==='fit')file.pdfZoom=1;
-    file.pdfScroll=0;render();
+    file.pdfScroll=0;remember();render();
   };
-  const change=event=>{if(!event.target.matches('.pdf-page-input')||!document)return;const value=Number(event.target.value);if(!Number.isInteger(value)||value<1||value>document.numPages){status();return;}file.pdfPage=value;file.pdfScroll=0;render();};
+  const change=event=>{if(!event.target.matches('.pdf-page-input')||!document)return;const value=Number(event.target.value);if(!Number.isInteger(value)||value<1||value>document.numPages){status();return;}file.pdfPage=value;file.pdfScroll=0;remember();render();};
   host.addEventListener('click',click);host.addEventListener('change',change);
-  pages.addEventListener('scroll',()=>{file.pdfScroll=pages.scrollTop;},{passive:true});
+  pages.addEventListener('scroll',()=>{file.pdfScroll=pages.scrollTop;remember();},{passive:true});
   loading.promise.then(value=>{if(disposed){value.destroy();return;}document=value;file.pdfPage=Math.min(file.pdfPage||1,document.numPages);lastWidth=Math.round(host.clientWidth);render();}).catch(error=>{if(!disposed)pages.textContent=`PDF 打开失败：${error.message}`;});
   return ()=>{disposed=true;++generation;observer.disconnect();cancelRender();host.removeEventListener('click',click);host.removeEventListener('change',change);loading.destroy().catch(()=>{});};
 }

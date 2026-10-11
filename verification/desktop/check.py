@@ -63,6 +63,24 @@ export function apply(ctx){ctx.llm.registerAdapter(['native-check'],new MockAdap
             assert state['courses'][0]['code']=='DEMO'
             assert any('原生运行检查完成' in message['text'] for message in state['messages']['desktop'])
         finally:store.close()
+        # Reuse the same saved conversation in a fresh bundled SDK process.
+        runtime.kill()
+        model.write_text("""import {MockAdapter,textResponse} from './adapter.ts';
+export const name='native-check';export const inject=['llm'];
+export function apply(ctx){ctx.llm.registerAdapter(['native-check'],new MockAdapter([
+ options=>{const history=JSON.stringify(options.messages.slice(0,-1));
+ if(!history.includes('检查原生学习工具')||!history.includes('原生运行检查完成'))throw new Error('Saved conversation was not restored');
+ if(options.model!=='restart-check')throw new Error('Current model was not selected');
+ return textResponse('原生会话恢复检查完成');}
+]));}
+""",encoding='utf-8')
+        runtime.model='restart-check'
+        runtime.prompt({'id':uuid.uuid4().hex,'channel':'desktop','text':'继续原来的对话','files':[]})
+        deadline=time.monotonic()+60
+        while runtime.status=='running' and time.monotonic()<deadline:time.sleep(.1)
+        assert runtime.status=='idle' and not runtime.error,(runtime.status,runtime.error)
+        with runtime.store() as store:
+            assert any('原生会话恢复检查完成' in message['text'] for message in store.snapshot()['messages']['desktop'])
     finally:runtime.stop()
     from pdf_tools import text
     tex=r'''\documentclass[UTF8,fontset=fandol]{ctexart}
@@ -108,4 +126,4 @@ export function apply(ctx){ctx.llm.registerAdapter(['native-check'],new MockAdap
         assert restored.conn.execute('PRAGMA integrity_check').fetchone()[0]=='ok'
         assert not restored.conn.execute('PRAGMA foreign_key_check').fetchall()
     finally:restored.close()
-print('Native SDK, source resolution, course files, UTF-8, memory locks, real Chinese PDF and persistent textbook index passed; no remote inference.')
+print('Native SDK restart/history/current model, source resolution, course files, UTF-8, memory locks, real Chinese PDF and persistent textbook index passed; no remote inference.')

@@ -37,6 +37,8 @@ jobs:
       - run: node verification/ui/check.cjs
       - run: node verification/ui/first-use.cjs
       - run: node verification/ui/state.cjs
+      - run: node verification/ui/interactions.cjs
+      - run: node verification/ui/session-resume.cjs
   container:
     runs-on: ubuntu-24.04
     timeout-minutes: 25

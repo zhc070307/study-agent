@@ -178,6 +178,8 @@ const {chromium}=require(process.env.STUDY_UI_PLAYWRIGHT_MODULE || path.join(pac
     await page.locator('#back').click();while(await page.locator('#clear-folder').isVisible())await page.locator('#clear-folder').click();
     await page.locator('[data-period="all"]').click();await page.getByRole('button',{name:/^完成平方函数练习/}).click();await page.waitForSelector('.answer-input');
     assert.match(await page.locator('.answer-input').inputValue(),/2×3=6/);
+    await page.locator('#conversation-menu').click();await page.locator('#history-search').fill('作答反馈已登记');await page.locator('.history-row').click();
+    assert.ok(await page.locator('.answer-input').isVisible(),'Looking up prior feedback keeps the practice open');
     assert.match(await page.locator('#conversation').textContent(),/作答反馈已登记/);
     const recovered=await api('/api/state');assert.ok(recovered.tasks.find(task=>task.id===exampleTask.id).done);assert.ok(recovered.files.find(file=>file.id===oldPdf.id));
     // Durable domain feedback and flow edits, not just UI messages.

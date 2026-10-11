@@ -8,6 +8,7 @@
 - Cordis、Cosmokit、Schemastery 和 Loader/Include/Group/Timer：MIT；各自完整许可保留在 `packages/runtime/foundation/*/LICENSE`。
 - 原生系统模块及 flock C 实现：BSD-3-Clause；完整许可保存在 [packages/runtime/native/system/LICENSE](packages/runtime/native/system/LICENSE)及对应子包内。
 - Marked、DOMPurify、PDF.js 的现有许可保留在 `ui/lib/`。
+- 剪贴板工具 [ui/clipboard.mjs](ui/clipboard.mjs)：取自同一 DeepSeek Harness 版本的 `packages/client/ui-primitives/src/clipboard.ts`，转为浏览器可直接使用的 JavaScript，保留复制失败检测与兼容回退；MIT，Copyright (c) 2026 DeepSeek，完整许可见 [packages/runtime/LICENSE](packages/runtime/LICENSE)。
 
 采用范围：模型循环、工具管线、持久会话、附件、模型适配、持久命令执行、必要服务与定向测试。未纳入原桌面/网页产品、账户平台、Office 工具或其他无关应用。启动、源代码布局、配置组成和依赖声明由本项目维护。原内部包名保留用于稳定模块身份，不代表需要下载 DeepSeek 仓库。
 

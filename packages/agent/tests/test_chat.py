@@ -1,10 +1,11 @@
 import json
+import io
 import os
 from pathlib import Path
 import sys
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import patch, Mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from web import Runtime, create_server
@@ -17,6 +18,7 @@ class ChatTests(unittest.TestCase):
         self.runtime = Runtime(self.root)
         self.runtime.active = 'desktop'
         self.runtime.status = 'running'
+        self.runtime.active_turn = 'test-turn'
 
     def tearDown(self):
         self.temp.cleanup()
@@ -60,6 +62,66 @@ class ChatTests(unittest.TestCase):
         self.assertEqual(self.runtime.status, 'idle')
         self.stream({'type':'start','attemptId':'late'})
         self.assertIsNone(self.runtime.conversation()['runtime']['live'])
+
+    def test_submission_timeout_stops_the_process_before_accepting_another_turn(self):
+        self.runtime.active = None
+        self.runtime.active_turn = None
+        self.runtime.status = 'idle'
+        process = Mock()
+        process.poll.return_value = None
+        process.stdin = io.StringIO()
+        self.runtime.process = process
+        self.runtime.REQUEST_TIMEOUT = .01
+        def stop_process():
+            self.runtime.process = None
+        with patch.object(self.runtime, 'start'), patch.object(self.runtime, 'kill', side_effect=stop_process) as stop:
+            with self.assertRaisesRegex(RuntimeError, '超时'):
+                self.runtime.prompt({'id': 'timeout', 'text': '保持原问题'})
+            stop.assert_called_once()
+        self.assertEqual(self.runtime.status, 'idle')
+        self.assertIsNone(self.runtime.active)
+        self.assertEqual(self.runtime.pending, {})
+        self.stream({'type': 'start', 'attemptId': 'late-after-timeout'})
+        self.stream({'type': 'chunk', 'attemptId': 'late-after-timeout', 'chunk': {'type': 'text-delta', 'text': '迟到回复'}})
+        self.assertIsNone(self.runtime.conversation()['runtime']['live'])
+        with self.runtime.store() as store:
+            self.assertEqual(store.conn.execute("SELECT status FROM desktop_turns WHERE id='timeout'").fetchone()[0], 'error')
+        self.assertNotIn('云端模型配置', self.runtime.error)
+
+    def test_second_submission_is_refused_while_the_same_chat_is_running(self):
+        with patch.object(self.runtime, 'start') as start:
+            with self.assertRaisesRegex(ValueError, '正在处理'):
+                self.runtime.prompt({'id': 'second', 'channel': 'desktop', 'text': '同一聊天里的另一个问题'})
+            start.assert_not_called()
+        self.assertEqual(self.runtime.active_turn, 'test-turn')
+
+    def test_stop_during_startup_cannot_submit_the_stopped_question(self):
+        self.runtime.active = None
+        self.runtime.status = 'idle'
+        with patch.object(self.runtime, 'start', side_effect=self.runtime.stop), patch.object(self.runtime, 'request') as request:
+            with self.assertRaises(RuntimeError):
+                self.runtime.prompt({'id': 'stopped-at-start', 'text': '已经按停止的问题'})
+            request.assert_not_called()
+        with self.runtime.store() as store:
+            self.assertIsNone(store.conn.execute("SELECT 1 FROM desktop_turns WHERE id='stopped-at-start'").fetchone())
+        self.assertEqual(self.runtime.status, 'idle')
+
+    def test_saved_question_keeps_original_reference_and_submission_identity(self):
+        self.runtime.active = None
+        self.runtime.status = 'idle'
+        with self.runtime.store() as store:
+            file = store.perform('create', {'name': '材料.md', 'text': '原始材料'})
+        request = {'id': 'reference-request', 'channel': 'desktop', 'text': '这个定义是什么意思？',
+                   'files': [file['id']], 'quote': {'file': file['id'], 'text': '原始材料', 'sha256': file['sha256'], 'source': '文字选区'}}
+        with patch.object(self.runtime, 'start'), patch.object(self.runtime, 'request', return_value={}):
+            self.runtime.prompt(request)
+            self.runtime.prompt(request)  # an acknowledgement retry is idempotent
+        messages = self.runtime.conversation()['messages']['desktop']
+        self.assertEqual(len(messages), 1)
+        self.assertEqual(messages[0]['id'], 'reference-request')
+        self.assertEqual(messages[0]['files'], [file['id']])
+        self.assertEqual(messages[0]['quote']['sha256'], file['sha256'])
+        self.assertGreater(messages[0]['time'], 0)
 
     def test_saved_settings_survive_restart_and_semester_change(self):
         with patch.dict(os.environ, {}, clear=True):

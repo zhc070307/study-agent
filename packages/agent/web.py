@@ -46,6 +46,7 @@ def serialized(method):
     return request
 
 class Runtime:
+    REQUEST_TIMEOUT = 30
     def __init__(self, root, *, provider='deepseek-official', model='deepseek-flash', extra_patch=None):
         self.root, self.provider, self.model = root, provider, model
         self.extra_patch = extra_patch or []
@@ -60,6 +61,7 @@ class Runtime:
         self.pending = {}
         self.serial = 0
         self.active = None
+        self.active_turn = None
         self.status = 'idle'
         self.error = None
         self.turn_error = None
@@ -88,7 +90,10 @@ class Runtime:
             self.process.stdin.write(encoded(dict(jsonrpc='2.0',id=identifier,method=method,params=params or {}))+'\n')
             self.process.stdin.flush()
         try:
-            result = reply.get(timeout=30)
+            try:
+                result = reply.get(timeout=self.REQUEST_TIMEOUT)
+            except queue.Empty as error:
+                raise TimeoutError('等待助理接收请求超时') from error
             if 'error' in result: raise RuntimeError(result['error'].get('message','助理请求失败'))
             return result['result']
         finally:
@@ -108,8 +113,9 @@ class Runtime:
         try:
             self.request('initialize',{'cwd':str(self.root),'provider':self.provider,'model':self.model})
         except Exception:
-            self.diagnostics.seek(0)
-            self.start_diagnostics=self.diagnostics.read()[-16000:]
+            if not self.diagnostics.closed:
+                self.diagnostics.seek(0)
+                self.start_diagnostics=self.diagnostics.read()[-16000:]
             self.kill()
             raise
 
@@ -128,7 +134,7 @@ class Runtime:
         finally:
             with self.lock:
                 if self.process is process:
-                    for target in self.pending.values(): target.put({'error':{'message':'助理进程退出，请检查模型配置或重试'}})
+                    for target in self.pending.values(): target.put({'error':{'message':'助理进程退出，请稍后重试'}})
                 if self.process is process and self.active:
                     self.finish('助理进程退出，已保存的结果仍保留。')
 
@@ -180,7 +186,7 @@ class Runtime:
                 if event.get('type')=='assistant/message':
                     message = event.get('data',{}).get('message',{})
                     text = '\n'.join(block['text'] for block in message.get('content',[]) if block.get('type')=='text')
-                    if text: store.message(message['id'],channel,{'role':'assistant','text':text})
+                    if text: store.message(message['id'],channel,{'role':'assistant','text':text,'time':int(time.time()*1000)})
                     self.live = None
                     self.changed()
                 elif event.get('type')=='turn/end':
@@ -196,9 +202,10 @@ class Runtime:
         channel = self.active
         if channel:
             with self.store() as store:
-                store.conn.execute("UPDATE desktop_turns SET status=? WHERE channel=? AND status='running'",('error' if error else 'completed',channel))
-                if error: store.message(uuid.uuid4().hex,channel,{'role':'assistant','text':error,'error':True})
+                store.conn.execute("UPDATE desktop_turns SET status=? WHERE id=? AND status='running'",('error' if error else 'completed',self.active_turn))
+                if error: store.message(uuid.uuid4().hex,channel,{'role':'assistant','text':error,'error':True,'time':int(time.time()*1000)})
         self.active=None
+        self.active_turn=None
         self.status='idle'
         self.error=error
         self.turn_error=None
@@ -228,8 +235,9 @@ class Runtime:
             identifier=args['id']
             if store.conn.execute('SELECT 1 FROM desktop_turns WHERE id=?',(identifier,)).fetchone(): return {'accepted':True}
         with self.lock:
-            if self.active and self.active!=channel: raise ValueError('助理正在处理另一份文件，请先停止或稍后发送')
+            if self.active: raise ValueError('助理正在处理，请先停止或稍后发送')
             self.active=channel
+            self.active_turn=identifier
             self.status='running'
             self.error=None
             self.live=None
@@ -237,21 +245,31 @@ class Runtime:
         try:
             self.start()
             with self.lock, self.store() as store:
-                store.message(identifier,channel,dict(role='user',text=text,refs=refs))
+                if self.active_turn != identifier: raise RuntimeError('请求已停止')
+                store.message(identifier,channel,dict(role='user',text=text,refs=refs,files=[item['id'] for item in context],quote=quote,time=int(time.time()*1000)))
                 store.conn.execute('INSERT INTO desktop_turns VALUES (?,?,?)',(identifier,channel,'running'))
                 self.changed()
             content = encoded({'用户要求':text,'关联文件':context,'选区或作答':quote})
             self.request('session/prompt',{'sessionId':'desktop-'+channel,'contentBlocks':[{'type':'text','text':content}]})
             return {'accepted':True}
         except Exception as error:
+            message = '暂时无法提交问题，请稍后重试。已有文件与聊天记录保留。'
+            if isinstance(error,TimeoutError):
+                # The acknowledgement may arrive later. Stop that process before
+                # admitting a retry so it cannot continue as an invisible turn.
+                self.kill()
+                message = '等待助理接收请求超时，本次处理已停止。已有文件与聊天记录保留，请稍后继续。'
             with self.lock:
-                if self.active==channel:self.finish('助理无法完成请求，请检查云端模型配置后重试。')
-            raise RuntimeError('助理请求失败，请检查云端模型配置') from error
+                if self.active_turn==identifier:self.finish(message)
+            raise RuntimeError(message) from error
 
     def kill(self):
         with self.lock:
             process=self.process
+            temp=self.temp
+            diagnostics=getattr(self,'diagnostics',None)
             self.process=None
+            self.temp=None
             for target in self.pending.values():target.put({'error':{'message':'请求已停止'}})
         if process and process.poll() is None:
             subprocess.run(['taskkill','/PID',str(process.pid),'/T','/F'],capture_output=True,timeout=10) if os.name=='nt' else os.killpg(process.pid,signal.SIGTERM)
@@ -259,12 +277,14 @@ class Runtime:
             except subprocess.TimeoutExpired:
                 subprocess.run(['taskkill','/PID',str(process.pid),'/T','/F'],capture_output=True,timeout=10) if os.name=='nt' else os.killpg(process.pid,signal.SIGKILL)
                 process.wait(timeout=5)
-        if self.temp: self.temp.cleanup(); self.temp=None
-        if hasattr(self,'diagnostics'): self.diagnostics.close()
+        if temp: temp.cleanup()
+        if diagnostics: diagnostics.close()
 
     def stop(self):
-        with self.lock: self.finish('已停止，已保存的文件和作答仍保留。')
-        self.kill()
+        # Finish and detach the old process before another turn can enter.
+        with self.lock:
+            self.finish('已停止，已保存的文件和作答仍保留。')
+            self.kill()
         return {'stopped':True}
 
 class Handler(BaseHTTPRequestHandler):

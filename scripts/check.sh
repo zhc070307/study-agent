@@ -10,6 +10,7 @@ python3 -m unittest discover -s packages/agent/tests -q
 python3 -m unittest discover -s verification/transcription -p test_device.py -q
 python3 packages/agent/tests/profile_smoke.py
 python3 packages/agent/tests/profile_loop.py
+python3 packages/agent/tests/profile_restart.py
 bridge_file=packages/runtime/modules/test-support/agent-loop-testkit/tests/study-agent-verification.spec.ts
 integration_file=packages/runtime/modules/test-support/agent-loop-testkit/tests/study-integration.spec.ts
 [[ ! -e "$bridge_file" && ! -e "$integration_file" ]] || {

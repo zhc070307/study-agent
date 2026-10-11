@@ -13,6 +13,7 @@ import { admitEncodedImages, type EncodedImageAttachment, type ImageAttachmentRe
 import { createUserMessage, ReasoningEffortId, type ContentBlock, type LlmRuntime } from '@deepseek-ai/dsh-llm'
 import { carrierKeyOf, type Scoped } from '@deepseek-ai/dsh-scope'
 import type { SessionId } from '@deepseek-ai/dsh-session'
+import { SessionPersistenceNotFoundError } from '@deepseek-ai/dsh-session-persistence'
 import type SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import type { SubagentRunEndInfo } from '@deepseek-ai/dsh-subagent'
 import * as LlmDeepSeek from '@deepseek-ai/dsh-llm-deepseek-api-key'
@@ -281,16 +282,25 @@ export class HarnessSdkJsonRpcServer {
     // rows in the host plane, so this agent reads them from the global layer. A
     // deployment that configures a roster has to join one here first
     // (@deepseek-ai/dsh-agent-preset-registry README, "Composing a child agent").
-    const handle = await this.ctx.agents.create({
-      sessionId: brandString<SessionId>(sessionId),
-      meta: { cwd: this.cwd },
-      agentOptions: {
-        provider: this.provider,
-        model: this.model,
-        ...this.reasoningEffort === undefined ? {} : { reasoningEffort: this.reasoningEffort },
-        ...this.maxTokens === undefined ? {} : { maxTokens: this.maxTokens },
-      },
-    })
+    const id = brandString<SessionId>(sessionId)
+    const agentOptions = {
+      provider: this.provider,
+      model: this.model,
+      ...this.reasoningEffort === undefined ? {} : { reasoningEffort: this.reasoningEffort },
+      ...this.maxTokens === undefined ? {} : { maxTokens: this.maxTokens },
+    }
+    // Study Agent reopens the same conversation after process or model changes.
+    // Only a genuinely absent log permits creation; corruption/ownership errors
+    // must propagate without replacing the original history.
+    let handle: AgentHandle | undefined
+    if (this.ctx.get('sessionPersistence') !== undefined) {
+      try {
+        handle = await this.ctx.agents.resume({ resumeSessionId: id, agentOptions })
+      } catch (error) {
+        if (!(error instanceof SessionPersistenceNotFoundError)) throw error
+      }
+    }
+    handle ??= await this.ctx.agents.create({ sessionId: id, meta: { cwd: this.cwd }, agentOptions })
     const rec: SessionRecord = { handle }
     this.sessions.set(sessionId, rec)
     return rec
