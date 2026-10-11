@@ -19,12 +19,12 @@ Study Agent 是一个放课程文件、与 AI 学习助理交谈的学习桌面�
 
 ## 下载与安装
 
-当前是首轮用户测试版。可以直接下载下面的安装包，也可以打开[版本下载页面](https://github.com/zhc070307/study-agent/releases/tag/v0.1.0-beta.1)查看版本说明：
+当前提供 **0.1.5 用户测试版**。可以直接下载下面的安装包，也可以打开[版本下载页面](https://github.com/zhc070307/study-agent/releases/tag/v0.1.5)查看版本说明：
 
 | 电脑 | 下载 | 安装方式 |
 | --- | --- | --- |
-| Apple 芯片 Mac，macOS 14 或更新 | [Mac 安装包](https://github.com/zhc070307/study-agent/releases/download/v0.1.0-beta.1/Study-Agent-0.1.0-macOS-arm64.dmg) | 打开 `.dmg`，将 Study Agent 拖到“应用程序”，再打开它。 |
-| Windows 10（1903 或更新）/ 11，64 位 Intel 或 AMD 电脑 | [Windows 安装包](https://github.com/zhc070307/study-agent/releases/download/v0.1.0-beta.1/Study-Agent-0.1.0-Windows-x64.exe) | 打开 `.exe`，按安装向导完成，然后从开始菜单或桌面打开。 |
+| Apple 芯片 Mac，macOS 14 或更新 | [Mac 安装包](https://github.com/zhc070307/study-agent/releases/download/v0.1.5/Study-Agent-0.1.5-mac-arm64.dmg) | 打开 `.dmg`，将 Study Agent 拖到“应用程序”，再打开它。 |
+| Windows 10（1903 或更新）/ 11，64 位 Intel 或 AMD 电脑 | [Windows 安装包](https://github.com/zhc070307/study-agent/releases/download/v0.1.5/Study-Agent-0.1.5-win-x64.exe) | 打开 `.exe`，按安装向导完成，然后从开始菜单或桌面打开。 |
 
 版本下载页面中，`Source code` 是源码；安装软件请选择 `.dmg` 或 `.exe`。
 
