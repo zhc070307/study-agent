@@ -85,6 +85,7 @@ jobs:
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
+          if [ "$RUNNER_OS" = macOS ]; then ulimit -n 8192; fi
           npm ci --prefix packages/desktop
           npm run build --prefix packages/desktop -- --publish never
       - name: Open the packaged app

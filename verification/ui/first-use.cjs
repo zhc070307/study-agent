@@ -29,8 +29,11 @@ const assert=require('node:assert/strict');
     await page.getByRole('button',{name:'打开 已有课堂稿.md',exact:true}).click();await page.waitForSelector('.markdown-body h1');assert.equal(await page.locator('.markdown-body h1').textContent(),'函数与导数');
     const initial=await api('/api/state');assert.equal(initial.files[0].folder,null);assert.equal(initial.transcription.installed,false);
     assert.equal(fs.existsSync(path.join(data,'.transcription/venv')),false);
-    await page.locator('#settings').click();await page.locator('#model-key').fill('first-use-private-test-key');await page.locator('#picker-confirm').click();
-    await page.waitForFunction(async()=>Boolean((await(await fetch('/api/settings')).json()).configured));
+    await page.locator('#settings').click();await page.locator('#model-key').fill('first-use-private-test-key');
+    const savedSettings=page.waitForResponse(response=>response.url()===origin+'/api/settings'&&response.request().method()==='POST');
+    await page.locator('#picker-confirm').click();
+    const savedResponse=await savedSettings,savedStatus=await savedResponse.json();
+    assert.ok(savedResponse.ok(),JSON.stringify(savedStatus));assert.equal(savedStatus.configured,true);
     assert.equal((await api('/api/settings')).configured,true);
     assert.ok(!JSON.stringify(await api('/api/state')).includes('first-use-private-test-key'));
     // A task can belong to a course without forcing today's date.
