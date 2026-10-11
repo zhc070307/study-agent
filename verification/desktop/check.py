@@ -78,7 +78,9 @@ export function apply(ctx){ctx.llm.registerAdapter(['native-check'],new MockAdap
         runtime.prompt({'id':uuid.uuid4().hex,'channel':'desktop','text':'继续原来的对话','files':[]})
         deadline=time.monotonic()+60
         while runtime.status=='running' and time.monotonic()<deadline:time.sleep(.1)
-        assert runtime.status=='idle' and not runtime.error,(runtime.status,runtime.error)
+        if runtime.status!='idle' or runtime.error:
+            runtime.diagnostics.seek(0)
+            raise AssertionError((runtime.status,runtime.error,getattr(runtime,'last_turn_reason',None),runtime.diagnostics.read()))
         with runtime.store() as store:
             assert any('原生会话恢复检查完成' in message['text'] for message in store.snapshot()['messages']['desktop'])
     finally:runtime.stop()

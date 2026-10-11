@@ -57,6 +57,8 @@ class Runtime:
         self.live = None
         self.start_lock = threading.Lock()
         self.prompt_lock = threading.Lock()
+        self.kill_lock = threading.Lock()
+        self.stopping = False
         self.process = None
         self.pending = {}
         self.serial = 0
@@ -130,7 +132,8 @@ class Runtime:
                 else:
                     if self.process is process: self.notification(frame)
         except Exception:
-            self.error = '助理连接中断'
+            with self.lock:
+                if self.process is process: self.error = '助理连接中断'
         finally:
             with self.lock:
                 if self.process is process:
@@ -235,7 +238,7 @@ class Runtime:
             identifier=args['id']
             if store.conn.execute('SELECT 1 FROM desktop_turns WHERE id=?',(identifier,)).fetchone(): return {'accepted':True}
         with self.lock:
-            if self.active: raise ValueError('助理正在处理，请先停止或稍后发送')
+            if self.active or self.stopping: raise ValueError('助理正在处理或停止，请稍后发送')
             self.active=channel
             self.active_turn=identifier
             self.status='running'
@@ -264,27 +267,48 @@ class Runtime:
             raise RuntimeError(message) from error
 
     def kill(self):
+        with self.kill_lock: self._kill()
+
+    def _kill(self):
         with self.lock:
+            self.stopping=True
+            self.status='running'
+            self.changed()
             process=self.process
             temp=self.temp
             diagnostics=getattr(self,'diagnostics',None)
             self.process=None
             self.temp=None
             for target in self.pending.values():target.put({'error':{'message':'请求已停止'}})
-        if process and process.poll() is None:
-            subprocess.run(['taskkill','/PID',str(process.pid),'/T','/F'],capture_output=True,timeout=10) if os.name=='nt' else os.killpg(process.pid,signal.SIGTERM)
-            try: process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                subprocess.run(['taskkill','/PID',str(process.pid),'/T','/F'],capture_output=True,timeout=10) if os.name=='nt' else os.killpg(process.pid,signal.SIGKILL)
-                process.wait(timeout=5)
-        if temp: temp.cleanup()
-        if diagnostics: diagnostics.close()
+            if process and process.poll() is None:
+                # The existing SDK shutdown drains persistence and exits. A
+                # Windows /F termination can otherwise lose the final batch.
+                self.serial+=1
+                try:
+                    process.stdin.write(encoded(dict(jsonrpc='2.0',id=self.serial,method='shutdown'))+'\n')
+                    process.stdin.flush()
+                except (OSError,ValueError):pass
+        try:
+            if process and process.poll() is None:
+                try: process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    subprocess.run(['taskkill','/PID',str(process.pid),'/T','/F'],capture_output=True,timeout=10) if os.name=='nt' else os.killpg(process.pid,signal.SIGKILL)
+                    process.wait(timeout=5)
+        finally:
+            if temp: temp.cleanup()
+            if diagnostics: diagnostics.close()
+            with self.lock:
+                self.stopping=False
+                if self.active is None: self.status='idle'
+                self.changed()
 
     def stop(self):
-        # Finish and detach the old process before another turn can enter.
+        # Refuse new turns while shutdown saves the old process's final batch.
         with self.lock:
+            self.stopping=True
             self.finish('已停止，已保存的文件和作答仍保留。')
-            self.kill()
+            self.status='running'
+        self.kill()
         return {'stopped':True}
 
 class Handler(BaseHTTPRequestHandler):

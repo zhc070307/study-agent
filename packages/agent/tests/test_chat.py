@@ -6,6 +6,7 @@ import sys
 import tempfile
 import unittest
 from unittest.mock import patch, Mock
+from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from web import Runtime, create_server
@@ -105,6 +106,31 @@ class ChatTests(unittest.TestCase):
         with self.runtime.store() as store:
             self.assertIsNone(store.conn.execute("SELECT 1 FROM desktop_turns WHERE id='stopped-at-start'").fetchone())
         self.assertEqual(self.runtime.status, 'idle')
+
+    def test_windows_shutdown_saves_before_forced_termination(self):
+        process = Mock()
+        process.poll.return_value = None
+        process.stdin = io.StringIO()
+        self.runtime.process = process
+        with patch('web.os', SimpleNamespace(name='nt')), patch('web.subprocess.run') as force:
+            self.runtime.stop()
+            force.assert_not_called()
+        self.assertEqual(json.loads(process.stdin.getvalue())['method'], 'shutdown')
+        process.wait.assert_called_once_with(timeout=5)
+        self.assertIsNone(self.runtime.process)
+        self.assertFalse(self.runtime.stopping)
+
+    def test_windows_unresponsive_shutdown_has_a_bounded_fallback(self):
+        import subprocess
+        process = Mock(pid=123)
+        process.poll.return_value = None
+        process.stdin = io.StringIO()
+        process.wait.side_effect = [subprocess.TimeoutExpired('sdk', 5), None]
+        self.runtime.process = process
+        with patch('web.os', SimpleNamespace(name='nt')), patch('web.subprocess.run') as force:
+            self.runtime.stop()
+            force.assert_called_once_with(['taskkill','/PID','123','/T','/F'],capture_output=True,timeout=10)
+        self.assertFalse(self.runtime.stopping)
 
     def test_saved_question_keeps_original_reference_and_submission_identity(self):
         self.runtime.active = None
