@@ -96,6 +96,9 @@ export class HarnessSdkJsonRpcServer {
       const payload: SessionEventNotification = { sessionId: String(session.id), event }
       this.transport.notify('session.event', payload)
     }))
+    this.disposers.push(ctx.on('agent/assistant-stream', ({ agent, frame }) => {
+      this.transport.notify('session.stream', { sessionId: String(agent.session.id), frame })
+    }))
     this.disposers.push(ctx.on('agent/status', ({ agent, status }) => {
       this.transport.notify('session.status', { sessionId: String(agent.session.id), status })
     }))

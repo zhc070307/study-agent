@@ -73,3 +73,8 @@ jobs:
           PYTHONUTF8: '1'
           PYTHONDONTWRITEBYTECODE: '1'
         run: python -m unittest discover -s packages/agent/tests -p test_textbooks.py -v
+      - name: Chat state and saved settings
+        env:
+          PYTHONUTF8: '1'
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: python -m unittest discover -s packages/agent/tests -p test_chat.py -v

@@ -19,9 +19,10 @@ const assert=require('node:assert/strict');
     async function api(route,value){const response=await fetch(origin+route,value===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(value)});const result=await response.json();assert.ok(response.ok,JSON.stringify(result));return result;}
     browser=await chromium.launch({headless:true,executablePath:process.env.STUDY_UI_BROWSER||(fs.existsSync('/usr/bin/chromium')?'/usr/bin/chromium':undefined),args:['--no-sandbox']});
     const page=await browser.newPage();const errors=[];page.on('pageerror',error=>errors.push(error.message));
-    await page.goto(origin);await page.waitForSelector('#model-key');
-    assert.match(await page.locator('#picker').textContent(),/开始使用/);
-    await page.getByRole('button',{name:'取消',exact:true}).click();
+    await page.goto(origin);await page.waitForSelector('#model-setup:not([hidden])');
+    assert.equal(await page.locator('#picker').evaluate(element=>element.open),false);
+    await page.reload();await page.waitForSelector('#model-setup:not([hidden])');
+    assert.equal(await page.locator('#picker').evaluate(element=>element.open),false);
     // Reading and receiving files work before model configuration.
     await page.locator('#file-input').setInputFiles({name:'已有课堂稿.md',mimeType:'text/markdown',buffer:Buffer.concat([Buffer.from([0xff,0xfe]),Buffer.from('# 函数与导数\r\n已有原稿，无需转写。','utf16le')])});
     await page.waitForSelector('button[aria-label="打开 已有课堂稿.md"]');
@@ -35,7 +36,10 @@ const assert=require('node:assert/strict');
     // A task can belong to a course without forcing today's date.
     await api('/api/workspace',{action:'course',args:{code:'DEMO',name:'数学'},semester:'initial'});
     const course=(await api('/api/state')).courses[0];
-    await page.reload();await page.waitForFunction(()=>courses.some(course=>course.code==='DEMO'));await page.waitForSelector('#back');await page.locator('#back').click();await page.locator('#new-task').click();
+    await page.reload();await page.waitForFunction(()=>courses.some(course=>course.code==='DEMO'));await page.waitForSelector('#back');
+    assert.equal(await page.locator('#picker').evaluate(element=>element.open),false);
+    assert.equal(await page.locator('#model-setup').evaluate(element=>element.hidden),true);
+    await page.locator('#back').click();await page.locator('#new-task').click();
     await page.locator('#task-title').fill('有空时复习');await page.locator('#task-new-course').selectOption(course.id);await page.locator('#task-date').fill('');await page.locator('#picker-confirm').click();
     await page.waitForFunction(async()=>{const state=await(await fetch('/api/state')).json();return state.tasks.some(task=>task.title==='有空时复习');});
     const before=await api('/api/state');assert.equal(before.tasks.length,1);assert.equal(before.tasks[0].scheduled_date,null);

@@ -6,10 +6,12 @@ import os
 from pathlib import Path
 import queue
 import signal
+import sqlite3
 import subprocess
 import sys
 import tempfile
 import threading
+import time
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit, unquote
@@ -21,10 +23,13 @@ from settings import Settings
 from transcription import Transcription, perform as transcribe
 from urllib.parse import parse_qs
 from functools import wraps
+from contextlib import closing
 
 def serialized(method):
     @wraps(method)
     def request(self):
+        # Long-lived readers must not block semester changes or backup operations.
+        if urlsplit(self.path).path == '/api/chat-events': return method(self)
         # A compile must not block status/stop. Selection changes instead refuse in-flight HTTP work.
         if urlsplit(self.path).path in ('/api/semesters','/api/semester-export','/api/semester-import'):
             with self.server.lifecycle_lock:
@@ -42,6 +47,10 @@ class Runtime:
         self.root, self.provider, self.model = root, provider, model
         self.extra_patch = extra_patch or []
         self.lock = threading.RLock()
+        self.updates = threading.Condition(self.lock)
+        self.revision = 0
+        self.generation = uuid.uuid4().hex
+        self.live = None
         self.start_lock = threading.Lock()
         self.prompt_lock = threading.Lock()
         self.process = None
@@ -120,22 +129,62 @@ class Runtime:
                 if self.process is process and self.active:
                     self.finish('助理进程退出，已保存的结果仍保留。')
 
+    def changed(self):
+        self.revision += 1
+        self.updates.notify_all()
+
+    def conversation(self):
+        # A live update reads chat only; it must not scan/reconcile course files.
+        with self.lock, closing(sqlite3.connect(self.root/'.study-system/data/task_memory.sqlite3')) as conn:
+            messages = {}
+            for identifier, channel, value in conn.execute('SELECT id,channel,value FROM desktop_messages ORDER BY rowid'):
+                messages.setdefault(channel, []).append(dict(json.loads(value), id=identifier))
+            return {'messages':messages, 'runtime':{'active':self.active, 'status':self.status,
+                    'error':self.error, 'revision':self.revision, 'generation':self.generation,
+                    'live':{key:self.live[key] for key in ('id','channel','text')} if self.live else None}}
+
     def notification(self, frame):
         params = frame.get('params',{})
         session = params.get('sessionId','')
         if not session.startswith('desktop-'): return
         channel = session[8:]
-        with self.store() as store:
-            event = params.get('event',{})
-            if event.get('type')=='assistant/message':
-                message = event.get('data',{}).get('message',{})
-                text = '\n'.join(block['text'] for block in message.get('content',[]) if block.get('type')=='text')
-                if text: store.message(message['id'],channel,{'role':'assistant','text':text})
-            elif event.get('type')=='turn/end':
-                reason = event.get('data',{}).get('reason',{})
-                self.last_turn_reason=reason
-                if reason.get('kind') not in ('completed',None):
-                    self.turn_error = '本次处理未完成，已保存的结果仍保留。'
+        with self.lock:
+            if channel != self.active: return
+            if frame.get('method') == 'session.stream':
+                stream = params['frame']
+                if stream['type'] == 'start':
+                    self.live = {'id':stream['attemptId'], 'channel':channel, 'blocks':{}, 'text':''}
+                elif self.live and self.live['id'] == stream['attemptId']:
+                    if stream['type'] == 'chunk':
+                        chunk = stream['chunk']
+                        key = str(chunk.get('index', 0))
+                        if chunk['type'] == 'text-delta':
+                            self.live['blocks'][key] = self.live['blocks'].get(key, '') + chunk['text']
+                        elif chunk['type'] == 'block-end' and chunk['block']['type'] == 'text':
+                            self.live['blocks'][key] = chunk['block']['text']
+                        self.live['text'] = '\n'.join(self.live['blocks'][key] for key in sorted(self.live['blocks'], key=int))
+                    elif stream['type'] == 'end': self.live = None
+                self.changed()
+                return
+            self.settle_notification(frame, channel)
+
+    def settle_notification(self, frame, channel):
+        params = frame.get('params', {})
+        event = params.get('event', {})
+        # Transient chunks never enter the durable message history.
+        if event.get('type') in ('assistant/message', 'turn/end'):
+            with self.store() as store:
+                if event.get('type')=='assistant/message':
+                    message = event.get('data',{}).get('message',{})
+                    text = '\n'.join(block['text'] for block in message.get('content',[]) if block.get('type')=='text')
+                    if text: store.message(message['id'],channel,{'role':'assistant','text':text})
+                    self.live = None
+                    self.changed()
+                elif event.get('type')=='turn/end':
+                    reason = event.get('data',{}).get('reason',{})
+                    self.last_turn_reason=reason
+                    if reason.get('kind') not in ('completed',None):
+                        self.turn_error = '本次处理未完成，已保存的结果仍保留。'
         if frame.get('method')=='session.status' and params.get('status')=='idle':
             with self.lock:
                 if self.active==channel: self.finish(self.turn_error)
@@ -150,6 +199,8 @@ class Runtime:
         self.status='idle'
         self.error=error
         self.turn_error=None
+        self.live=None
+        self.changed()
 
     def prompt(self,args):
         with self.prompt_lock:return self._prompt(args)
@@ -178,11 +229,14 @@ class Runtime:
             self.active=channel
             self.status='running'
             self.error=None
+            self.live=None
+            self.changed()
         try:
             self.start()
-            with self.store() as store:
+            with self.lock, self.store() as store:
                 store.message(identifier,channel,dict(role='user',text=text,refs=refs))
                 store.conn.execute('INSERT INTO desktop_turns VALUES (?,?,?)',(identifier,channel,'running'))
+                self.changed()
             content = encoded({'用户要求':text,'关联文件':context,'选区或作答':quote})
             self.request('session/prompt',{'sessionId':'desktop-'+channel,'contentBlocks':[{'type':'text','text':content}]})
             return {'accepted':True}
@@ -231,12 +285,46 @@ class Handler(BaseHTTPRequestHandler):
         if origin and origin not in ('http://'+host,'https://'+host): raise ValueError('请求来源不匹配')
         if self.headers.get('Sec-Fetch-Site')=='cross-site': raise ValueError('不接受跨站请求')
 
+    def chat_events(self):
+        with self.server.lifecycle_lock:
+            runtime = self.server.runtime
+            semester = self.server.semesters.load()['active']
+        self.send_response(200)
+        self.send_header('Content-Type', 'text/event-stream; charset=utf-8')
+        self.send_header('Cache-Control', 'no-store')
+        self.send_header('X-Accel-Buffering', 'no')
+        self.send_header('X-Content-Type-Options', 'nosniff')
+        self.end_headers()
+        revision, last_sent = -1, 0
+        try:
+            while self.server.runtime is runtime:
+                with runtime.updates:
+                    now = time.monotonic()
+                    if revision == runtime.revision or now - last_sent < .05:
+                        runtime.updates.wait(timeout=.05 if revision != runtime.revision else 10)
+                    if self.server.runtime is not runtime: return
+                    now = time.monotonic()
+                    if revision == runtime.revision:
+                        if now - last_sent < 10: continue
+                        data = ': keep-alive\n\n'
+                    elif now - last_sent < .05: continue
+                    else:
+                        state = runtime.conversation()
+                        state['semester'] = semester
+                        revision = state['runtime']['revision']
+                        data = 'data: ' + encoded(state) + '\n\n'
+                self.wfile.write(data.encode('utf-8'))
+                self.wfile.flush()
+                last_sent = now
+        except (BrokenPipeError, ConnectionResetError): pass
+
     @serialized
     def do_GET(self):
         store=None
         try:
             self.trusted()
             path=unquote(urlsplit(self.path).path)
+            if path=='/api/chat-events': return self.chat_events()
             if path=='/api/semester-export':
                 if self.server.runtime.status=='running':raise ValueError('请先停止助理，再下载学期备份')
                 identifier=parse_qs(urlsplit(self.path).query).get('semester',[None])[0]
@@ -267,7 +355,7 @@ class Handler(BaseHTTPRequestHandler):
                 store=Workspace(self.server.root)
                 state=store.snapshot(include_text=False)
                 state['semesters']=self.server.semesters.load()
-                state['runtime']={'active':self.server.runtime.active,'status':self.server.runtime.status,'error':self.server.runtime.error}
+                state.update(self.server.runtime.conversation())
                 state['transcription']=Transcription(self.server.root).status()
                 return self.reply(state)
             if path.startswith('/api/file/'):

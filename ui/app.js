@@ -13,6 +13,9 @@ let transcription={installed:false,jobs:[]};
 let semesterId=null,semesterList=null,readonly=false,removedFiles=[];
 let serverVersion = -1, applying = false, metadataTimer, busy = false, sending = false;
 let savedMetadata = '', syncChain = Promise.resolve();
+let runtimeView={status:'idle',revision:-1},chatSemester=null,chatStream;
+const pendingMessages=new Map(),conversationViews=new Map();
+let renderedChannel=null;
 const requestId = () => crypto.randomUUID();
 async function api(path, value) {
   const headers=semesterId?{'X-Study-Semester':semesterId}:{};
@@ -44,7 +47,7 @@ async function refresh(force=false) {
   removedFiles=data.trash||[];$('#file-trash').hidden=!removedFiles.length;
   for(const element of $$('#new-folder,#new-task,#add-files,#remove-files,#move-files,#move-first,#rename,#edit-file,#compile-file,#transcribe-file,#prompt,.send-button,.quick-actions button'))element.disabled=readonly;
   for(const file of data.files){file.source+='?semester='+semesterId;file.url+='&semester='+semesterId;}
-  busy=data.runtime.status==='running';
+  applyConversation(data,data.semesters.active);
   if(data.warnings?.length)$('.prototype-note').textContent='课程文件有其他修改，已保留版本，待助理核对';
   $('#stop-agent').hidden=!busy;
   $('.preview-label').textContent=busy ? '助理处理中' : '学习桌';
@@ -59,7 +62,6 @@ async function refresh(force=false) {
   }));
   folders.splice(0,folders.length,...data.folders);
   tasks.splice(0,tasks.length,...data.tasks);courses=data.courses||[];
-  state.messages=new Map(Object.entries(data.messages));
   for(const [id,text] of Object.entries(data.answers)) if(!state.answers.has(id)) state.answers.set(id,text);
   const firstLoad=serverVersion<0;
   if (firstLoad) {
@@ -162,23 +164,66 @@ function renderContexts() {
 }
 function renderConversation() {
   const container = $('#conversation');
-  const messages = state.messages.get(channel()) || [];
-  container.innerHTML = '';
+  const key=channel(),switched=renderedChannel!==key;
+  const view=conversationViews.get(key)||{top:0,follow:true};conversationViews.set(key,view);
+  const top=switched?view.top:container.scrollTop;
+  const messages = [...(state.messages.get(key) || [])];
+  for(const [id,pending] of pendingMessages)if(pending.channel===key&&!messages.some(message=>message.id===id))messages.push(pending);
+  const live=runtimeView.live;
+  if(live?.channel===key&&live.text)messages.push({id:'live-'+live.id,role:'assistant',text:live.text});
+  const existing=new Map([...container.children].map(node=>[node.dataset.message,node]));
+  const wanted=[];
   if (!messages.length) {
-    const welcome = document.createElement('div'); welcome.className = 'welcome';
+    const welcome = existing.get('welcome')||document.createElement('div'); welcome.className = 'welcome';welcome.dataset.message='welcome';
     welcome.innerHTML = readonly ? '<p>这个学期已归档，文件和记录保留。需要修改或提问时，可以重新开始。</p>' : '<p>可以放入课程材料，也可以直接告诉我你想学什么。</p>';
-    container.append(welcome);
+    wanted.push(welcome);
   }
-  for (const message of messages) {
-    const div = document.createElement('div'); div.className = `message ${message.role === 'user' ? 'user' : 'assistant-message'}`;
+  for (const [index,message] of messages.entries()) {
+    const id=message.id||'history-'+index;
+    const artifacts=message===messages[messages.length-1]&&message.role==='assistant'?files.filter(f=>f.session==='desktop-'+key):[];
+    const signature=JSON.stringify([message,artifacts.map(file=>[file.id,file.name])]);
+    const div = existing.get(id)||document.createElement('div');wanted.push(div);
+    if(div.dataset.signature===signature)continue;
+    div.dataset.message=id;div.dataset.signature=signature;div.replaceChildren();div.className = `message ${message.role === 'user' ? 'user' : 'assistant-message'}`;
     const label = document.createElement('span'); label.className = 'message-meta'; label.textContent = message.role === 'user' ? '你' : '助理'; div.append(label);
     if (message.refs) { const refs = document.createElement('span'); refs.className = 'message-ref'; refs.textContent = message.refs; div.append(refs); }
     const body = document.createElement('div');body.className='chat-body';if(message.role==='assistant')body.innerHTML=markdownPreview(message.text);else body.textContent=message.text;div.append(body);
-    if (message.file) {const button = document.createElement('button'); button.className = 'message-artifact'; button.dataset.openArtifact = message.file; button.innerHTML = `${icon('file')}<span>${esc(getFile(message.file).name)}</span>${icon('arrow')}`; div.append(button);}
-    if(message===messages[messages.length-1] && message.role==='assistant') {for(const file of files.filter(f=>f.session==='desktop-'+channel())){const button=document.createElement('button');button.className='message-artifact';button.dataset.openArtifact=file.id;button.textContent=file.name;div.append(button);}}
-    container.append(div);
+    if (message.file&&getFile(message.file)) {const button = document.createElement('button'); button.className = 'message-artifact'; button.dataset.openArtifact = message.file; button.innerHTML = `${icon('file')}<span>${esc(getFile(message.file).name)}</span>${icon('arrow')}`; div.append(button);}
+    for(const file of artifacts){const button=document.createElement('button');button.className='message-artifact';button.dataset.openArtifact=file.id;button.textContent=file.name;div.append(button);}
   }
-  if (messages.length) container.scrollTop = container.scrollHeight;
+  if((busy&&runtimeView.active===key)||[...pendingMessages.values()].some(message=>message.channel===key)){
+    const progress=existing.get('progress')||document.createElement('div');progress.dataset.message='progress';progress.className='chat-progress';progress.setAttribute('role','status');
+    const text=live?.channel===key&&live.text?'正在回复…':busy?'助理正在处理…':'正在发送…';if(progress.textContent!==text)progress.textContent=text;wanted.push(progress);
+  }
+  for(const node of [...container.children])if(!wanted.includes(node))node.remove();
+  wanted.forEach((node,index)=>{if(container.children[index]!==node)container.insertBefore(node,container.children[index]||null);});
+  renderedChannel=key;
+  container.scrollTop=view.follow?container.scrollHeight:top;
+  view.top=container.scrollTop;
+  $('#chat-latest').hidden=view.follow||container.scrollHeight-container.clientHeight<24;
+}
+function applyConversation(data,semester){
+  if(semesterId&&semester!==semesterId)return;
+  if(chatSemester===semester&&runtimeView.generation===data.runtime.generation&&data.runtime.revision<runtimeView.revision)return;
+  chatSemester=semester;runtimeView=data.runtime;busy=runtimeView.status==='running';
+  state.messages=new Map(Object.entries(data.messages));
+  $('#stop-agent').hidden=!busy;
+  $('.send-button').disabled=readonly||busy||sending;
+  $('.preview-label').textContent=busy?'助理处理中':'学习桌';
+  renderConversation();
+}
+$('#conversation').addEventListener('scroll',()=>{
+  if(renderedChannel!==channel())return;
+  const container=$('#conversation'),view=conversationViews.get(channel());if(!view)return;
+  view.top=container.scrollTop;view.follow=container.scrollHeight-container.clientHeight-container.scrollTop<24;
+  $('#chat-latest').hidden=view.follow;
+},{passive:true});
+$('#chat-latest').addEventListener('click',()=>{conversationViews.set(channel(),{top:0,follow:true});renderConversation();});
+function connectChat(){
+  chatStream?.close();
+  chatStream=new EventSource('/api/chat-events');
+  chatStream.onmessage=event=>{const data=JSON.parse(event.data);if(semesterId&&data.semester!==semesterId){location.reload();return;}applyConversation(data,data.semester);};
+  chatStream.onerror=()=>{if(busy){const progress=$('.chat-progress');if(progress)progress.textContent='连接中断，正在重连…';}};
 }
 function addMessage(role, text, extra = {}) {
   const key = channel(); if (!state.messages.has(key)) state.messages.set(key, []);
@@ -342,14 +387,18 @@ function quickAction(action) {
   $('#prompt').focus();
 }
 async function sendMessage() {
-  const input=$('#prompt'),text=input.value.trim();if(!text || sending)return;
+  const input=$('#prompt'),text=input.value.trim();if(!text || sending||busy)return;
+  if(modelSetupNeeded){try{await openSettings();}catch(error){toast(error.message);}return;}
   sending=true;
   const key=channel(),args={id:requestId(),channel:key,text,files:[...state.contexts],quote:state.quote};
+  const refs=[...state.contexts].map(id=>getFile(id)?.name).filter(Boolean).join(' · ');
+  pendingMessages.set(args.id,{id:args.id,channel:key,role:'user',text,refs});
+  conversationViews.set(key,{top:0,follow:true});$('.send-button').disabled=true;renderConversation();
   try {
     await api('/api/chat',args);
-    if(channel()===key){input.value='';state.quote=null;renderContexts();persistDraft();}
+    if(channel()===key){if(input.value.trim()===text)input.value='';if(state.quote===args.quote)state.quote=null;renderContexts();persistDraft();}
     await refresh();
-  } catch(error){toast(error.message);await refresh();}finally{sending=false;}
+  } catch(error){toast(error.message);await refresh();}finally{pendingMessages.delete(args.id);sending=false;$('.send-button').disabled=readonly||busy;renderConversation();}
 }
 $('#chat-form').addEventListener('submit', event => {event.preventDefault(); sendMessage();});
 $('#prompt').addEventListener('keydown', event => {if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {event.preventDefault(); sendMessage();}});
@@ -437,7 +486,7 @@ divider.addEventListener('pointerdown', event => {divider.setPointerCapture(even
 divider.addEventListener('pointermove', event => {if (divider.hasPointerCapture(event.pointerId)) setAssistantWidth(window.innerWidth - event.clientX);});
 divider.addEventListener('keydown', event => {if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {event.preventDefault(); setAssistantWidth($('.assistant').getBoundingClientRect().width + (event.key === 'ArrowLeft' ? 20 : -20));}});
 renderDesktop(); renderContexts(); renderConversation(); renderTabs();
-refresh(true).then(()=>{$('.prototype-note').textContent='文件与对话自动保存';}).catch(error=>{toast('无法连接云端服务：'+error.message);$('.prototype-note').textContent='尚未连接服务';});
+refresh(true).then(()=>{connectChat();$('.prototype-note').textContent='文件与对话自动保存';}).catch(error=>{toast('无法连接云端服务：'+error.message);$('.prototype-note').textContent='尚未连接服务';});
 setInterval(()=>refresh().catch(()=>{$('.preview-label').textContent='连接中断';}),2000);
 if (matchMedia('(max-width:720px)').matches) collapseAssistant(true);
 
@@ -518,13 +567,15 @@ $('#file-trash').addEventListener('click',()=>showPicker('恢复文件',removedF
 }));
 
 let settingsChecked=false;
-async function openSettings(first=false){
+let modelSetupNeeded=false;
+async function openSettings(){
   const settings=await api('/api/settings');
-  showPicker(first?'开始使用':'设置',`<p class="picker-note">填写 DeepSeek 的服务密钥，让助理回答问题。阅读文件、手动整理无需先填写。</p><label class="settings-label">模型服务密钥<input id="model-key" class="picker-input" type="password" autocomplete="off" placeholder="${settings.configured?'已保存；留空保留现有密钥':'填写你的密钥'}"></label><a class="text-button" href="https://platform.deepseek.com/api_keys" target="_blank" rel="noopener">获取密钥</a><label class="settings-label">助理模型<select id="model-choice" class="picker-input"><option value="deepseek-flash">DeepSeek Flash</option><option value="deepseek-v4-pro">DeepSeek V4 Pro（文本）</option></select></label>`,async()=>{
-    try{await api('/api/settings',{api_key:$('#model-key').value,model:$('#model-choice').value,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone});$('#model-key').value='';toast('设置已保存');}catch(error){toast(error.message);}
+  showPicker('设置',`<p class="picker-note">填写 DeepSeek 的服务密钥，让助理回答问题。阅读文件、手动整理无需先填写。</p><label class="settings-label">模型服务密钥<input id="model-key" class="picker-input" type="password" autocomplete="off" placeholder="${settings.configured?'已保存；留空保留现有密钥':'填写你的密钥'}"></label><a class="text-button" href="https://platform.deepseek.com/api_keys" target="_blank" rel="noopener">获取密钥</a><label class="settings-label">助理模型<select id="model-choice" class="picker-input"><option value="deepseek-flash">DeepSeek Flash</option><option value="deepseek-v4-pro">DeepSeek V4 Pro（文本）</option></select></label>`,async()=>{
+    try{await api('/api/settings',{api_key:$('#model-key').value,model:$('#model-choice').value,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone});modelSetupNeeded=false;$('#model-setup').hidden=true;$('#model-key').value='';toast('设置已保存');}catch(error){toast(error.message);}
   });
   $('#model-choice').value=settings.model;
 }
 $('#settings').addEventListener('click',()=>openSettings().catch(error=>toast(error.message)));
-async function checkSettings(){if(settingsChecked)return;settingsChecked=true;try{const value=await api('/api/settings');if(value.needs_setup)await openSettings(true);}catch(error){toast(error.message);}}
+$('#setup-assistant').addEventListener('click',()=>openSettings().catch(error=>toast(error.message)));
+async function checkSettings(){if(settingsChecked)return;settingsChecked=true;try{const value=await api('/api/settings');modelSetupNeeded=Boolean(value.needs_setup);$('#model-setup').hidden=!modelSetupNeeded;}catch(error){toast(error.message);}}
 checkSettings();

@@ -75,7 +75,13 @@ button svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.5
 .assistant{display:flex;flex-direction:column;background:#fff;min-height:0;overflow:hidden;margin:10px 18px 18px 0;border:1px solid #dfebfb;border-radius:22px;box-shadow:0 8px 30px #3679c80d}
 .assistant-header{padding:16px 20px;display:flex;align-items:center;justify-content:space-between;border-bottom:0;min-height:64px;background:#fff}
 .assistant-identity strong{font-size:14px;font-weight:600;color:#2d4057}
-.conversation{flex:1;overflow:auto;padding:22px 20px 10px;min-height:100px}
+.conversation-wrap{position:relative;display:flex;flex:1;min-height:0}
+.conversation{flex:1;overflow:auto;padding:22px 20px 10px;min-height:0;overscroll-behavior:contain;overflow-anchor:none}
+.chat-latest{position:absolute;bottom:10px;left:50%;transform:translateX(-50%);border:1px solid #cde2ff;border-radius:20px;padding:7px 13px;background:#f4f9ff;color:#286ab4;box-shadow:0 4px 12px #3071c01a;font-size:12px;white-space:nowrap}
+.chat-progress{display:flex;align-items:center;gap:8px;color:#6485ab;font-size:12px;padding:2px 2px 18px}
+.chat-progress::before{content:'';width:7px;height:7px;border-radius:50%;background:#5095ef;animation:chat-pulse 1.4s ease-in-out infinite}
+@keyframes chat-pulse{50%{opacity:.35}}
+@media(prefers-reduced-motion:reduce){.chat-progress::before{animation:none}}
 .welcome p{font-size:13px;color:#617997;line-height:1.9;margin:0}
 .message{font-size:13px;line-height:1.9;margin-bottom:22px;white-space:pre-wrap;overflow-wrap:anywhere}
 .message.user{margin-left:20px;padding:10px 13px;background:#eaf3ff;border:0;border-radius:16px}
@@ -85,6 +91,7 @@ button svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.5
 .message-artifact{display:flex;margin-top:12px;padding:11px;align-items:center;gap:10px;border:1px solid #dce8f8;background:#f6faff;border-radius:7px;text-align:left;width:100%;font-size:11px}
 .message-artifact svg{stroke:#647d9d;fill:none;width:18px;height:18px}
 .assistant-bottom{padding:16px;border-top:0;background:#fff}
+.model-setup{margin:0 0 12px;color:#6485ab;font-size:12px;line-height:1.7}
 .quick-actions{display:flex;gap:7px;margin-bottom:11px}
 .quick-actions button{padding:7px 10px;border:1px solid #e0ebfa;background:none;border-radius:7px;font-size:10px;display:flex;align-items:center;gap:10px}
 .quick-actions button:hover{background:#f2f7ff}

@@ -73,7 +73,26 @@ const {chromium}=require(process.env.STUDY_UI_PLAYWRIGHT_MODULE || path.join(pac
     await page.locator('#ask-selection').click();
     await page.locator('#prompt').fill('请解释导数并组织练习、生成 PDF。约定不设置阅读与练习先后。');
     await page.locator('.send-button').click();
+    await page.waitForSelector('.chat-progress');
+    assert.match(await page.locator('#conversation').textContent(),/请解释导数并组织练习/);
     console.log('Checking SDK generation and PDF');
+    await page.waitForFunction(()=>document.querySelector('#conversation').textContent.includes('核对项 10'),{},{timeout:90000});
+    assert.equal((await api('/api/state')).runtime.status,'running','Reply must be visible before the model finishes');
+    await page.locator('#conversation').evaluate(element=>{
+      element.scrollTop=0;
+      const body=element.querySelector('.user .chat-body'),range=document.createRange();range.selectNodeContents(body);
+      const selection=getSelection();selection.removeAllRanges();selection.addRange(range);
+    });
+    await page.waitForSelector('#chat-latest:not([hidden])');
+    await page.evaluate(()=>connectChat());
+    await page.waitForSelector('#stop-agent[hidden]',{state:'attached',timeout:30000});
+    assert.equal(await page.locator('#conversation').evaluate(element=>element.scrollTop),0,'Streaming must not pull a reader back down');
+    assert.match(await page.evaluate(()=>getSelection().toString()),/请解释导数/,'Updates must preserve selected history');
+    assert.equal(await page.locator('.message.user').count(),1,'Reconnecting must not duplicate messages');
+    await page.waitForTimeout(2300);
+    assert.equal(await page.locator('#conversation').evaluate(element=>element.scrollTop),0,'Periodic refresh must preserve the scroll position');
+    await page.locator('#chat-latest').click();
+    assert.ok(await page.locator('#conversation').evaluate(element=>element.scrollHeight-element.clientHeight-element.scrollTop<24));
     await page.waitForFunction(()=>document.querySelector('#conversation').textContent.includes('练习与 PDF 已保存')||document.querySelector('#conversation').textContent.includes('本次处理未完成'),{},{timeout:90000});
     console.log('SDK generation completed');
     let state=await api('/api/state');assert.equal(state.runtime.error,null,JSON.stringify(state.messages));
@@ -129,12 +148,32 @@ const {chromium}=require(process.env.STUDY_UI_PLAYWRIGHT_MODULE || path.join(pac
     await page.reload();await page.waitForFunction(()=>document.querySelector('#document-tabs').textContent.includes('新文件.md'));
     await page.setViewportSize({width:390,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
     assert.deepEqual(errors,[]);assert.deepEqual(external,[]);
+    // An unconfigured app offers an inline setup entry without opening a modal.
+    await page.setViewportSize({width:1440,height:960});
+    await page.route('**/api/settings',async route=>{
+      if(route.request().method()!=='GET')return route.continue();
+      const response=await route.fetch();const value=await response.json();
+      await route.fulfill({json:{...value,needs_setup:!value.configured}});
+    });
+    await page.reload();await page.waitForSelector('#model-setup:not([hidden])');
+    assert.equal(await page.locator('#picker').evaluate(element=>element.open),false);
+    await page.reload();await page.waitForSelector('#model-setup:not([hidden])');
+    assert.equal(await page.locator('#picker').evaluate(element=>element.open),false);
+    await page.locator('#prompt').fill('未配置时保留的问题');await page.locator('.send-button').click();
+    await page.waitForSelector('#model-key');
+    assert.equal(await page.locator('#prompt').inputValue(),'未配置时保留的问题');
+    await page.locator('#model-key').fill('browser-settings-fixture');await page.locator('#picker-confirm').click();
+    await page.waitForSelector('#model-setup[hidden]',{state:'attached'});
+    await page.reload();await page.waitForSelector('[data-folder]',{state:'attached'});
+    assert.equal(await page.locator('#picker').evaluate(element=>element.open),false);
+    assert.equal((await api('/api/settings')).configured,true);
     // Restart the actual HTTP process and recover the same desk, conversations and answers.
     processChild.kill('SIGTERM');await new Promise(resolve=>processChild.once('exit',resolve));
     processChild=spawn('python3',[path.join(__dirname,'serve-test.py'),data,String(port)],{cwd:root,stdio:['ignore','pipe','pipe']});
     processChild.stderr.on('data',chunk=>diagnostics+=chunk);
     const restartedPort=await new Promise((resolve,reject)=>{processChild.stdout.once('data',chunk=>resolve(Number(chunk.toString().trim())));processChild.once('exit',code=>reject(new Error('Restart exited '+code)));});
     assert.equal(restartedPort,port);
+    assert.equal((await api('/api/settings')).configured,true,'Saved key must survive a full service restart');
     await page.setViewportSize({width:1440,height:960});await page.reload();await page.waitForSelector('[data-folder]',{state:'attached'});
     await page.locator('#back').click();while(await page.locator('#clear-folder').isVisible())await page.locator('#clear-folder').click();
     await page.locator('[data-period="all"]').click();await page.getByRole('button',{name:/^完成平方函数练习/}).click();await page.waitForSelector('.answer-input');

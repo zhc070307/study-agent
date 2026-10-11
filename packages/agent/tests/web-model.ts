@@ -21,6 +21,12 @@ export function apply(ctx: Context) {
   const tool = (id: string, action: string, input: object) => toolCallResponse(id,'study_desktop',{action,input:JSON.stringify(input)})
   class VisionMock extends MockAdapter {
     override async resolveModel(provider: string, model: string) {return {...await super.resolveModel(provider,model),inputModalities:['text' as const,'image' as const]}}
+    override async *stream(options: Parameters<MockAdapter['stream']>[0]) {
+      for await(const chunk of super.stream(options)){
+        if(chunk.type==='text-delta')await new Promise(resolve=>setTimeout(resolve,8));
+        yield chunk;
+      }
+    }
   }
   ctx.llm.registerAdapter(['study-web-test'],new VisionMock([
     options=>{
@@ -54,7 +60,7 @@ export function apply(ctx: Context) {
     options=>{preview=last(options);return toolCallResponse('web-change-apply','study_change',{action:'apply',input:JSON.stringify({flow:'memory',scope:'learning',version:preview.version,expected:preview.current})})},
     ()=>tool('web-agreement-list','list',{}),
     options=>tool('web-agreement-save','agreement',{scope:'learning',key:'学习安排',text:'阅读和练习根据当前意愿自由选择',reason:'用户明确要求不设置阅读与练习先后',expected:last(options).agreements.learning.version}),
-    textResponse('**练习与 PDF 已保存**，学习约定已更新。阅读和练习可自由安排。'),
+    textResponse('**练习与 PDF 已保存**，学习约定已更新。阅读和练习可自由安排。\n\n'+Array.from({length:40},(_,i)=>`核对项 ${String(i+1).padStart(2,'0')}：按原材料安排学习。`).join('\n\n')),
     options=>{
       const input=userRequest(options)
       if(!options.messages.some(m=>m.content.some(b=>b.type==='text'&&b.text.includes('学习安排'))))throw new Error('Overall memory reference was not supplied')
