@@ -587,6 +587,7 @@ $('#picker-body').addEventListener('click',async event=>{
   const action=event.target.closest('[data-update-action]')?.dataset.updateAction;if(!action)return;
   try{
     if(action==='install'){
+      if($('#model-key')?.value){toast('请先保存设置，再重启更新');return;}
       const settings=await api('/api/settings');
       if($('#model-key')?.value||$('#model-choice')?.value!==settings.model){toast('请先保存设置，再重启更新');return;}
       const current=await api('/api/state');

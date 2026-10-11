@@ -1,17 +1,18 @@
 {
   "name": "study-agent-desktop",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "private": true,
   "description": "\u8bfe\u7a0b\u6587\u4ef6\u4e0e\u5b66\u4e60\u52a9\u7406",
   "author": "Study Agent contributors",
   "license": "MIT",
   "main": "main.cjs",
   "scripts": {
-    "build": "electron-builder --config build-config.cjs"
+    "build": "node --require ./build-fs.cjs ./node_modules/electron-builder/out/cli/cli.js --config build-config.cjs"
   },
   "devDependencies": {
     "electron": "44.7.0",
-    "electron-builder": "26.15.3"
+    "electron-builder": "26.15.3",
+    "graceful-fs": "4.2.11"
   },
   "build": {
     "appId": "org.studyagent.desktop",
