@@ -585,10 +585,20 @@ function showUpdateState(value){
 $('#app-update').addEventListener('click',()=>openSettings().catch(error=>toast(error.message)));
 $('#picker-body').addEventListener('click',async event=>{
   const action=event.target.closest('[data-update-action]')?.dataset.updateAction;if(!action)return;
-  try{showUpdateState(await window.studyDesktop.updates[action]());}catch{toast('暂时无法完成更新，请稍后重试');}
+  try{
+    if(action==='install'){
+      const settings=await api('/api/settings');
+      if($('#model-key')?.value||$('#model-choice')?.value!==settings.model){toast('请先保存设置，再重启更新');return;}
+      const current=await api('/api/state');
+      if([...state.answers].some(([id,text])=>text.trim()!==(current.answers[id]||'').trim())){toast('请先保存尚未保存的作答，再重启更新');return;}
+      if(!readonly)await operation('draft',{channel:channel(),value:{prompt:$('#prompt').value,contexts:[...state.contexts],quote:state.quote,scroll:$('.workspace').scrollTop}});
+    }
+    showUpdateState(await window.studyDesktop.updates[action]());
+  }catch{toast('暂时无法完成更新，请稍后重试');}
 });
 if(window.studyDesktop?.updates){window.studyDesktop.updates.subscribe(showUpdateState);window.studyDesktop.updates.state().then(showUpdateState).catch(()=>{});}
 async function openSettings(){
+  if($('#edit-text')){toast('请先保存或取消当前编辑，再打开设置');return;}
   const settings=await api('/api/settings');
   showPicker('设置',`${updateControls()}<p class="picker-note">填写 DeepSeek 的服务密钥，让助理回答问题。阅读文件、手动整理无需先填写。</p><label class="settings-label">模型服务密钥<input id="model-key" class="picker-input" type="password" autocomplete="off" placeholder="${settings.configured?'已保存；留空保留现有密钥':'填写你的密钥'}"></label><a class="text-button" href="https://platform.deepseek.com/api_keys" target="_blank" rel="noopener">获取密钥</a><label class="settings-label">助理模型<select id="model-choice" class="picker-input"><option value="deepseek-flash">DeepSeek Flash</option><option value="deepseek-v4-pro">DeepSeek V4 Pro（文本）</option></select></label>`,async()=>{
     try{await api('/api/settings',{api_key:$('#model-key').value,model:$('#model-choice').value,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone});modelSetupNeeded=false;$('#model-setup').hidden=true;$('#model-key').value='';toast('设置已保存');}catch(error){toast(error.message);}
