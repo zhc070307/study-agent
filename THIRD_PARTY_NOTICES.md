@@ -10,7 +10,9 @@
 - Marked、DOMPurify、PDF.js 的现有许可保留在 `ui/lib/`。
 - 剪贴板工具 [ui/clipboard.mjs](ui/clipboard.mjs)：取自同一 DeepSeek Harness 版本的 `packages/client/ui-primitives/src/clipboard.ts`，转为浏览器可直接使用的 JavaScript，保留复制失败检测与兼容回退；MIT，Copyright (c) 2026 DeepSeek，完整许可见 [packages/runtime/LICENSE](packages/runtime/LICENSE)。
 
-采用范围：模型循环、工具管线、持久会话、附件、模型适配、持久命令执行、必要服务与定向测试。未纳入原桌面/网页产品、账户平台、Office 工具或其他无关应用。启动、源代码布局、配置组成和依赖声明由本项目维护。原内部包名保留用于稳定模块身份，不代表需要下载 DeepSeek 仓库。
+- 对话界面工具 [ui/harness-ui.mjs](ui/harness-ui.mjs) 与侧栏样式 [ui/harness-sidebar.css](ui/harness-sidebar.css)：选取 DeepSeek Harness 版本 `d743267388641bc76f17c45ce8b4c231aed1d32c` 的 `packages/client/ui-primitives/src/useAnchoredPosition.ts`、`relative-time.ts` 和 `packages/client/ui-workspace/src/client/rows/Rows.module.css`。保留菜单随滚动、窗口与内容尺寸变化重新定位的实现，以及相对时间分桶和紧凑列表样式；改用浏览器 DOM 生命周期、本项目选择器与浅蓝配色。MIT，Copyright (c) 2026 DeepSeek，完整许可见 [packages/runtime/LICENSE](packages/runtime/LICENSE)。
+
+采用范围：模型循环、工具管线、持久会话、附件、模型适配、持久命令执行、必要服务与定向测试。未引入原桌面/网页应用整体；界面仅采用上述选定组件。未纳入账户平台、Office 工具或其他无关应用。启动、源代码布局、配置组成和依赖声明由本项目维护。原内部包名保留用于稳定模块身份，不代表需要下载 DeepSeek 仓库。
 
 ## 可选录音转写
 

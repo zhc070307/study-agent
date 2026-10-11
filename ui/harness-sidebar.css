@@ -1,0 +1,15 @@
+/* Adapted from DeepSeek Harness, MIT, Copyright (c) 2026 DeepSeek.
+ * d743267388641bc76f17c45ce8b4c231aed1d32c
+ * packages/client/ui-workspace/src/client/rows/Rows.module.css
+ * Full license: ../packages/runtime/LICENSE.
+ * Changes: local selectors and blue theme; file association and time subtitle.
+ */
+.history-row{display:flex;align-items:center;gap:6px;border-radius:10px;padding:0 8px;cursor:pointer;user-select:none;color:#314c6f}
+.history-row:hover,.history-row.current{background:#deecff}
+.history-open{display:flex;flex-direction:column;align-items:stretch;min-height:48px;box-sizing:border-box;border:none;padding:4px 0;background:transparent;cursor:pointer;text-align:left;color:inherit}
+.history-row strong{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px;line-height:20px;font-weight:400}
+.history-row small,.history-open>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;line-height:17px;color:#6683a5}
+.chat-row-menu{margin:0;align-self:flex-start;padding-top:5px}
+.chat-row-menu>div{position:fixed;right:auto;z-index:100;min-width:136px;max-width:calc(100vw - 24px)}
+.chat-row-menu button:hover,.chat-row-menu button:focus-visible{outline:none;background:#edf5ff}
+.chat-row-confirm,.chat-row-edit{padding:4px 0 8px}

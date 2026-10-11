@@ -46,6 +46,7 @@ class Workspace:
         self.blobs.mkdir(parents=True, exist_ok=True)
         self.conn = db.initialize(self.root / '.study-system/data/task_memory.sqlite3')
         self.tasks = TaskService(self.conn)
+        migrate_chats=not self.conn.execute("SELECT 1 FROM sqlite_master WHERE name='desktop_chats'").fetchone()
         self.conn.executescript('''
           CREATE TABLE IF NOT EXISTS desktop_publications (path TEXT PRIMARY KEY, file TEXT NOT NULL, desired TEXT NOT NULL, published TEXT);
           CREATE TABLE IF NOT EXISTS desktop_retirements (path TEXT PRIMARY KEY, destination TEXT NOT NULL, sha256 TEXT);
@@ -58,13 +59,60 @@ class Workspace:
           CREATE TABLE IF NOT EXISTS desktop_task_files (task TEXT PRIMARY KEY REFERENCES tasks(id), file TEXT NOT NULL);
           CREATE TABLE IF NOT EXISTS desktop_messages (id TEXT PRIMARY KEY, channel TEXT NOT NULL, value TEXT NOT NULL);
           CREATE TABLE IF NOT EXISTS desktop_drafts (channel TEXT PRIMARY KEY, value TEXT NOT NULL);
+          CREATE TABLE IF NOT EXISTS desktop_chats (channel TEXT PRIMARY KEY, file TEXT, title TEXT, status TEXT NOT NULL DEFAULT 'open', created INTEGER NOT NULL);
           CREATE TABLE IF NOT EXISTS desktop_answers (id TEXT PRIMARY KEY, file TEXT NOT NULL, value TEXT NOT NULL);
           CREATE TABLE IF NOT EXISTS desktop_compiles (id TEXT PRIMARY KEY, file TEXT NOT NULL, value TEXT NOT NULL);
           CREATE TABLE IF NOT EXISTS desktop_preparations (id TEXT PRIMARY KEY, value TEXT NOT NULL);
           CREATE TABLE IF NOT EXISTS desktop_views (compile TEXT NOT NULL, page INTEGER NOT NULL, PRIMARY KEY(compile,page));
         ''')
         self.migrate_folders()
+        # Preserve the SDK identity of existing file-bound conversations.
+        if migrate_chats:
+            for channel, in self.conn.execute("SELECT channel FROM desktop_messages UNION SELECT channel FROM desktop_drafts WHERE substr(channel,1,2)!='__'").fetchall():
+                self.conn.execute("INSERT OR IGNORE INTO desktop_chats VALUES (?,?,NULL,'open',0)",(channel,None if channel=='desktop' else channel))
         self.publication_warnings=[] if read_only(self.root) else self.sync_publications()
+
+    def chat(self, channel, *, writable=False):
+        if not isinstance(channel,str) or not channel or len(channel)>100:
+            raise ValueError('对话标识无效')
+        row=self.conn.execute('SELECT * FROM desktop_chats WHERE channel=?',(channel,)).fetchone()
+        if row is None:
+            if channel!='desktop':self.file(channel)
+            self.conn.execute("INSERT OR IGNORE INTO desktop_chats VALUES (?,?,NULL,'open',0)",(channel,None if channel=='desktop' else channel))
+            row=self.conn.execute('SELECT * FROM desktop_chats WHERE channel=?',(channel,)).fetchone()
+        if row['status']=='deleted':raise ValueError('这段对话已删除，请打开或新建其他对话')
+        if writable:
+            if row['status']=='archived':raise ValueError('这段对话已归档，请先取消归档再继续')
+            if row['file']:self.file(row['file'])
+        return dict(row)
+
+    def new_chat(self, file):
+        import time
+        channel=uid()
+        self.conn.execute("INSERT INTO desktop_chats VALUES (?,?,NULL,'open',?)",(channel,file,int(time.time()*1000)))
+        return self.chat(channel)
+
+    def manage_chat(self, action, args):
+        with db.atomic(self.conn,bump_revision=False):
+            if action=='create':
+                file=args.get('file') or None
+                if file:self.file(file)
+                return self.new_chat(file)
+            chat=self.chat(args.get('channel'))
+            if action=='rename':
+                self.conn.execute('UPDATE desktop_chats SET title=? WHERE channel=?',(name(args.get('title')),chat['channel']))
+            elif action in ('archive','restore','delete'):
+                self.conn.execute('UPDATE desktop_chats SET status=? WHERE channel=?',({'archive':'archived','restore':'open','delete':'deleted'}[action],chat['channel']))
+                if action=='delete':
+                    self.conn.execute('UPDATE desktop_chats SET title=NULL WHERE channel=?',(chat['channel'],))
+                    self.conn.execute('DELETE FROM desktop_messages WHERE channel=?',(chat['channel'],))
+                    self.conn.execute('DELETE FROM desktop_drafts WHERE channel=?',(chat['channel'],))
+                    if self.conn.execute("SELECT 1 FROM sqlite_master WHERE name='desktop_turns'").fetchone():
+                        self.conn.execute('DELETE FROM desktop_turns WHERE channel=?',(chat['channel'],))
+                if action in ('archive','delete') and not self.conn.execute("SELECT 1 FROM desktop_chats WHERE file IS ? AND status='open'",(chat['file'],)).fetchone():
+                    self.new_chat(chat['file'])
+            else:raise ValueError('未知对话操作')
+            return {'saved':True}
 
     def sync_publications(self):
         with db.atomic(self.conn,bump_revision=False):
@@ -400,6 +448,7 @@ class Workspace:
             self.conn.execute('INSERT INTO desktop_answers VALUES (?,?,?)',(answer['id'],args['file'],encoded(answer)))
             return answer
         if action == 'draft':
+            if not args['channel'].startswith('__'):self.chat(args['channel'],writable=True)
             self.conn.execute('INSERT OR REPLACE INTO desktop_drafts VALUES (?,?)',(args['channel'],encoded(args['value'])))
             return {'saved':True}
         if action == 'review':
@@ -551,6 +600,7 @@ class Workspace:
 
     def message(self, identifier, channel, value):
         with db.atomic(self.conn, bump_revision=False):
+            if self.chat(channel)['status']!='open':raise ValueError('这段对话已归档，请先取消归档再继续')
             self.conn.execute('INSERT OR IGNORE INTO desktop_messages VALUES (?,?,?)',(identifier,channel,encoded(value)))
 
     def compile(self, args, operation):

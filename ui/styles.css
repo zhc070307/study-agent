@@ -293,3 +293,82 @@ a.text-button {color:inherit;text-decoration:none;align-self:center;}
 .composer-footer::after{content:'Enter 发送 · Shift Enter 换行';font-size:9px;color:var(--muted);order:1}
 .composer-footer .send-button{order:2}
 @media(max-width:720px){.composer-footer::after{display:none}}
+
+/* Persistent conversation navigation, following the Harness sidebar pattern. */
+:root{--chat-sidebar-width:210px}
+.chat-sidebar{display:flex;flex-direction:column;min-height:0;padding:14px 10px 16px 14px;gap:10px;background:#f2f7ff}
+.chat-sidebar-heading{display:flex;align-items:center;justify-content:space-between;padding:0 6px;font-size:13px;color:#39577b}
+.chat-sidebar>.button{justify-content:flex-start;gap:8px;border-radius:10px;background:#fff;padding:10px;font-size:12px}
+.chat-sidebar>.button svg{width:15px;height:15px}
+.chat-sidebar>.picker-input{margin:0;padding:9px 10px;min-width:0;font-size:12px;background:#fff;border-radius:10px}
+#history-filter{border:0;background:transparent;color:#6683a5;font-size:11px;padding:3px 6px}
+.chat-sidebar .history-results{flex:1;min-height:0;max-height:none;margin:0;overflow:auto}
+.history-row{position:relative;display:flex;align-items:flex-start;flex-wrap:wrap;padding:0;margin:3px 0;border-radius:10px}
+.history-open{flex:1;min-width:0;border:0;background:transparent;padding:10px 8px;text-align:left;color:#314c6f;border-radius:10px}
+.history-row strong{font-size:12px;white-space:nowrap;text-overflow:ellipsis;overflow:hidden;font-weight:500}
+.history-row small{font-size:10px;white-space:nowrap;text-overflow:ellipsis;overflow:hidden}
+.history-open>span{display:block;font-size:11px;line-height:1.5;margin-top:6px;color:#68819f}
+.history-row.current{background:#deecff}
+.chat-row-menu{flex-shrink:0;margin:7px 3px 0 0}
+.chat-row-menu summary{list-style:none;cursor:pointer;font-weight:700;border-radius:7px;padding:1px 5px;color:#6683a5}
+.chat-row-menu summary::-webkit-details-marker{display:none}
+.chat-row-menu summary:hover{background:#cfdef2}
+.chat-row-menu>div{position:absolute;right:3px;top:30px;z-index:30;min-width:108px;padding:4px;background:#fff;border:1px solid #e0eafa;border-radius:10px;box-shadow:0 6px 20px #315d8e20}
+.chat-row-menu button{display:block;text-align:left;width:100%;border:0;border-radius:6px;background:none;padding:7px 9px;font-size:12px}
+.chat-row-menu button:hover{background:#f0f6ff}
+.chat-row-confirm,.chat-row-edit{width:100%;padding:8px;line-height:1.6;font-size:11px}
+.chat-row-edit input{width:100%;box-sizing:border-box;font:inherit;border:1px solid #a6c7f1;border-radius:6px;padding:6px;margin-bottom:7px}
+.chat-row-confirm p{margin:0 0 7px}
+.chat-row-confirm button,.chat-row-edit button{border:0;background:#fff;border-radius:6px;padding:5px 8px;font:inherit;margin-right:4px}
+.chat-delete{color:#b14853}
+.chats-hidden .chat-sidebar{display:none}
+.assistant-header{min-height:48px;padding:9px 14px}
+.assistant-identity strong{display:none}
+#conversation-title{display:block;font-size:13px;color:#365d8a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#conversation-menu{flex-shrink:0}
+#conversation-menu::after{content:''}
+.conversation{padding:12px 16px 8px}
+.message{margin-bottom:16px;line-height:1.7}
+.message.user{margin-left:14px;padding:9px 12px}
+.message-meta{margin-bottom:3px}
+.message-actions{margin-top:4px;gap:10px}
+.assistant-bottom{padding:10px 12px 12px}
+.assistant-bottom .prototype-note{display:none}
+.composer{padding:8px 10px;border-radius:14px}
+#prompt{min-height:24px;height:24px;max-height:160px;resize:none;padding:2px 0;line-height:22px}
+.composer-footer{margin-top:5px}
+.chat-expanded>.workspace,.chat-expanded>.panel-divider{display:none}
+.chat-expanded>.assistant{width:auto;margin:10px 18px 18px 0}
+.chat-expanded .conversation{padding:18px max(20px,calc((100% - 820px)/2))}
+.chat-expanded .assistant-bottom{padding:10px max(20px,calc((100% - 820px)/2)) 16px}
+@media(max-width:1100px) and (min-width:721px){:root{--chat-sidebar-width:180px}.workspace{padding:0 12px 16px}}
+@media(max-width:720px){.app-shell,.app-shell.chats-hidden,.app-shell.collapsed,.app-shell.chat-expanded{display:block}.chat-sidebar{position:fixed;left:10px;top:64px;bottom:10px;width:220px;z-index:25;border:1px solid #dce9fb;border-radius:16px;box-shadow:0 8px 30px #315d8e20}.chat-expanded>.assistant{position:fixed;width:calc(100vw - 20px);margin:0}.chat-expanded .conversation{padding:12px 16px}.chat-expanded .assistant-bottom{padding:10px 12px}}
+
+#conversation-menu{max-width:none;width:30px;display:inline-flex;padding:5px}
+
+.pdf-scroll-frame{position:relative;height:calc(100dvh - 232px);min-height:280px}
+.pdf-scroll-frame .pdf-pages{position:absolute;inset:0;height:auto;min-height:0;padding:12px;overflow:auto;overscroll-behavior:contain}
+.pdfViewer .pdf-sheet{margin:0 auto 14px;border:0;border-radius:0;box-sizing:content-box}
+.app-header>.assistant-toggle{display:inline-flex}
+/* Keep conversation navigation beside the main conversation; files are the preview pane. */
+:root{--assistant-width:calc((100vw - var(--chat-sidebar-width) - 14px) * .58)}
+.app-shell{grid-template-columns:var(--chat-sidebar-width) var(--assistant-width) 14px minmax(0,1fr)}
+.chat-sidebar{grid-column:1;grid-row:1}
+.assistant{grid-column:2;grid-row:1;margin:10px 0 18px;min-width:0}
+.panel-divider{grid-column:3;grid-row:1}
+.workspace{grid-column:4;grid-row:1;min-width:0}
+.app-shell.chats-hidden{--chat-sidebar-width:0px;grid-template-columns:var(--assistant-width) 14px minmax(0,1fr)}
+.chats-hidden>.assistant{grid-column:1}
+.chats-hidden>.panel-divider{grid-column:2}
+.chats-hidden>.workspace{grid-column:3}
+.app-shell.collapsed{grid-template-columns:var(--chat-sidebar-width) minmax(0,1fr)}
+.collapsed>.workspace{grid-column:2}
+.app-shell.collapsed.chats-hidden{grid-template-columns:minmax(0,1fr)}
+.collapsed.chats-hidden>.workspace{grid-column:1}
+.app-shell.chat-expanded{grid-template-columns:var(--chat-sidebar-width) minmax(0,1fr)}
+.chat-expanded>.assistant{grid-column:2;margin:10px 18px 18px 0}
+.app-shell.chat-expanded.chats-hidden{grid-template-columns:minmax(0,1fr)}
+.chat-expanded.chats-hidden>.assistant{grid-column:1;margin-left:14px}
+.app-header #settings{margin-left:auto}
+@media(max-width:1100px) and (min-width:721px){:root{--assistant-width:calc((100vw - var(--chat-sidebar-width) - 14px) * .56)}}
+@media(max-width:720px){.assistant,.chat-expanded>.assistant{margin:0;width:calc(100vw - 20px)}.app-shell,.app-shell.chats-hidden,.app-shell.collapsed,.app-shell.chat-expanded{display:block}}

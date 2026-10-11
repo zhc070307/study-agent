@@ -80,7 +80,16 @@ finally:server.runtime.stop();server.server_close()
     await page.locator('.pdf-page-input').fill('2');await page.locator('.pdf-page-input').press('Enter');await page.locator('[data-pdf="in"]').click();
     await page.waitForSelector('.pdf-sheet[data-page-number="2"][data-rendered="true"]');
     await page.waitForFunction(async id=>{const draft=(await(await fetch('/api/state')).json()).drafts['__reader:'+id];return draft?.pdfPage===2&&draft.pdfZoom>1;},pdf.id);
-    const sheet=await page.locator('.pdf-sheet').elementHandle();await op('write',{file:note.id,expected:note.sha256,text:'# 与当前 PDF 无关的改动'});
+    // Use the wheel across a physical page boundary, without any page-button click.
+    await page.locator('[data-pdf="previous"]').click();
+    await page.waitForFunction(()=>document.querySelector('.pdf-page-input').value==='1');
+    const firstSheet=await page.locator('.pdf-sheet[data-page-number="1"]').elementHandle();
+    const pdfBounds=await page.locator('.pdf-pages').boundingBox();
+    await page.mouse.move(pdfBounds.x+pdfBounds.width/2,pdfBounds.y+pdfBounds.height/2);
+    await page.mouse.wheel(0,2000);
+    await page.waitForFunction(()=>document.querySelector('.pdf-page-input').value==='2');
+    assert.ok(await firstSheet.evaluate(node=>node.isConnected),'Continuous scrolling must retain the adjacent page');
+    const sheet=await page.locator('.pdf-sheet[data-page-number="2"]').elementHandle();await op('write',{file:note.id,expected:note.sha256,text:'# 与当前 PDF 无关的改动'});
     await page.waitForFunction(async()=>serverVersion===(await(await fetch('/api/state')).json()).version);
     assert.ok(await sheet.evaluate(node=>node.isConnected),'An unrelated file update must not tear down the current reader');
     await page.reload();await page.waitForSelector('.pdf-sheet[data-page-number="2"][data-rendered="true"]');assert.equal(await page.locator('.pdf-zoom').textContent(),'115%');
@@ -116,7 +125,8 @@ store.close()
     assert.equal(await page.locator('#chat-find-count').textContent(),'1/19 条');
     await page.locator('#chat-find-next').click();assert.equal(await page.locator('#chat-find-count').textContent(),'2/19 条');
     const located=await page.locator('.find-current').getAttribute('data-message');
-    await page.waitForFunction(()=>document.querySelector('#chat-latest').hidden===false);
+    assert.equal(await page.locator('#chat-latest').count(),0);
+    assert.ok(await page.locator('#conversation').evaluate(node=>node.scrollTop+node.clientHeight<node.scrollHeight-24));
     await page.locator('#chat-find-close').click();
     const top=await page.locator('#conversation').evaluate(node=>node.scrollTop);
     await page.waitForFunction(async id=>{const saved=(await(await fetch('/api/state')).json()).drafts[id]?.chatScroll;return saved&&!saved.follow;},note.id);

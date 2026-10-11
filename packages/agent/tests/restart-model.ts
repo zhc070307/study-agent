@@ -15,6 +15,10 @@ function reply(options: GenerateOptions) {
   const request = requestOf(options)
   if (request.expectModel && options.model !== request.expectModel) throw new Error('Old model settings used')
   if (request.remember) return textResponse('已记住代号：' + request.remember)
+  if (request.fresh) {
+    if (JSON.stringify(options.messages.slice(0, -1)).includes(request.fresh)) throw new Error('Deleted or unrelated history reused')
+    return textResponse('这是独立的新对话')
+  }
   if (request.continue) {
     const history = JSON.stringify(options.messages.slice(0, -1))
     if (!history.includes(request.continue) || !history.includes('已记住代号')) throw new Error('Persisted conversation not restored')

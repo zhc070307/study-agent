@@ -151,7 +151,9 @@ class Runtime:
             messages = {}
             for identifier, channel, value in conn.execute('SELECT id,channel,value FROM desktop_messages ORDER BY rowid'):
                 messages.setdefault(channel, []).append(dict(json.loads(value), id=identifier))
-            return {'messages':messages, 'runtime':{'active':self.active, 'status':self.status,
+            conn.row_factory=sqlite3.Row
+            chats=[dict(row) for row in conn.execute("SELECT * FROM desktop_chats WHERE status!='deleted' ORDER BY created,rowid")]
+            return {'messages':messages, 'chats':chats, 'runtime':{'active':self.active, 'status':self.status,
                     'error':self.error, 'revision':self.revision, 'generation':self.generation,
                     'live':{key:self.live[key] for key in ('id','channel','text')} if self.live else None}}
 
@@ -218,10 +220,32 @@ class Runtime:
     def prompt(self,args):
         with self.prompt_lock:return self._prompt(args)
 
+    def manage_chat(self, args):
+        with self.prompt_lock:
+            action=args.get('action')
+            with self.lock:
+                if action in ('archive','delete') and (self.active or self.stopping):
+                    raise ValueError('请先停止助理或等待回答完成，再归档或删除对话')
+            with self.store() as store:
+                if action=='delete':
+                    store.chat(args.get('channel'))
+                    # Close the cached Agent and flush before removing its durable history.
+                    self.kill()
+                    if (self.root/'.harness/sessions').exists():
+                        command=runtime_command()
+                        command[-1]=str(PROJECT/'packages/agent/delete-chat.ts')
+                        try:
+                            subprocess.run([*command,str(self.root),args['channel']],cwd=PROJECT,check=True,capture_output=True,timeout=30)
+                        except (subprocess.SubprocessError,OSError) as error:
+                            raise RuntimeError('无法删除助理保存的会话，对话记录仍保留，请稍后重试') from error
+                result=store.manage_chat(action,args)
+            with self.lock:self.changed()
+            return result
+
     def _prompt(self,args):
         channel = args.get('channel','desktop')
         with self.store() as store:
-            if channel!='desktop': store.file(channel)
+            store.chat(channel,writable=True)
             text = args.get('text','').strip()
             if not text or len(text)>20000: raise ValueError('请输入问题（不超过两万字）')
             context=[]
@@ -504,6 +528,8 @@ class Handler(BaseHTTPRequestHandler):
             if path=='/api/chat':
                 if not self.server.settings.status()['configured'] and self.server.runtime.provider=='deepseek-official':raise ValueError('请先打开设置，填写模型服务密钥')
                 return self.reply(self.server.runtime.prompt(args))
+            if path=='/api/chats':
+                return self.reply(self.server.runtime.manage_chat(args))
             if path=='/api/stop':
                 data=self.server.semesters.load()
                 if data.get('pending'):self.server.semesters.change('cancel',{'expected':data['version']})

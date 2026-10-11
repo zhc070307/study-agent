@@ -83,6 +83,13 @@ export function apply(ctx){ctx.llm.registerAdapter(['native-check'],new MockAdap
             raise AssertionError((runtime.status,runtime.error,getattr(runtime,'last_turn_reason',None),runtime.diagnostics.read()))
         with runtime.store() as store:
             assert any('原生会话恢复检查完成' in message['text'] for message in store.snapshot()['messages']['desktop'])
+        # Check deletion with the actual bundled Node and native kernel lease.
+        runtime.manage_chat({'action':'archive','channel':'desktop'})
+        assert next(chat for chat in runtime.conversation()['chats'] if chat['channel']=='desktop')['status']=='archived'
+        runtime.manage_chat({'action':'restore','channel':'desktop'})
+        runtime.manage_chat({'action':'delete','channel':'desktop'})
+        assert 'desktop' not in runtime.conversation()['messages']
+        assert not any('检查原生学习工具' in path.read_text(encoding='utf-8') for path in (root/'.harness').rglob('*.jsonl'))
     finally:runtime.stop()
     from pdf_tools import text
     tex=r'''\documentclass[UTF8,fontset=fandol]{ctexart}
@@ -128,4 +135,4 @@ export function apply(ctx){ctx.llm.registerAdapter(['native-check'],new MockAdap
         assert restored.conn.execute('PRAGMA integrity_check').fetchone()[0]=='ok'
         assert not restored.conn.execute('PRAGMA foreign_key_check').fetchall()
     finally:restored.close()
-print('Native SDK restart/history/current model, source resolution, course files, UTF-8, memory locks, real Chinese PDF and persistent textbook index passed; no remote inference.')
+print('Native SDK restart/history/current model, archive/restore/delete, source resolution, course files, UTF-8, memory locks, real Chinese PDF and persistent textbook index passed; no remote inference.')

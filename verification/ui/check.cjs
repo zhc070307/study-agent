@@ -56,7 +56,7 @@ const {chromium}=require(process.env.STUDY_UI_PLAYWRIGHT_MODULE || path.join(pac
     assert.equal(transcript.folder,folder.id);assert.deepEqual(transcript.sources,[audio.id]);
     assert.equal(speechState.transcription.jobs[0].status,'completed');
     await page.locator('#back').click();
-    await page.locator('#clear-folder').click();await page.locator('#clear-folder').click();
+    assert.equal(await page.evaluate(()=>state.folder),null);
     await page.locator('[data-period="all"]').click();
     await page.locator('[data-task="'+exampleTask.id+'"]').check();
     await page.waitForFunction(async id=>{const data=await (await fetch('/api/state')).json();return data.tasks.find(task=>task.id===id)?.done&&data.drafts.__layout?.active===null&&data.drafts.__layout?.folder===null;},exampleTask.id);
@@ -83,7 +83,7 @@ const {chromium}=require(process.env.STUDY_UI_PLAYWRIGHT_MODULE || path.join(pac
       const body=element.querySelector('.user .chat-body'),range=document.createRange();range.selectNodeContents(body);
       const selection=getSelection();selection.removeAllRanges();selection.addRange(range);
     });
-    await page.waitForSelector('#chat-latest:not([hidden])');
+    assert.equal(await page.locator('#chat-latest').count(),0);
     await page.evaluate(()=>connectChat());
     await page.waitForSelector('#stop-agent[hidden]',{state:'attached',timeout:30000});
     assert.equal(await page.locator('#conversation').evaluate(element=>element.scrollTop),0,'Streaming must not pull a reader back down');
@@ -91,7 +91,7 @@ const {chromium}=require(process.env.STUDY_UI_PLAYWRIGHT_MODULE || path.join(pac
     assert.equal(await page.locator('.message.user').count(),1,'Reconnecting must not duplicate messages');
     await page.waitForTimeout(2300);
     assert.equal(await page.locator('#conversation').evaluate(element=>element.scrollTop),0,'Periodic refresh must preserve the scroll position');
-    await page.locator('#chat-latest').click();
+    await page.locator('#conversation').evaluate(node=>{node.scrollTop=node.scrollHeight});
     assert.ok(await page.locator('#conversation').evaluate(element=>element.scrollHeight-element.clientHeight-element.scrollTop<24));
     await page.waitForFunction(()=>document.querySelector('#conversation').textContent.includes('练习与 PDF 已保存')||document.querySelector('#conversation').textContent.includes('本次处理未完成'),{},{timeout:90000});
     console.log('SDK generation completed');
@@ -222,7 +222,8 @@ const {chromium}=require(process.env.STUDY_UI_PLAYWRIGHT_MODULE || path.join(pac
     await page.locator('#task-course').selectOption('phys');assert.equal(await page.locator('.task-row:not(.done)').count(),8);
     await page.locator('#task-course').selectOption('');
     await page.locator('.task-group').first().locator('summary').click();assert.equal(await page.locator('.task-group').first().evaluate(element=>element.open),false);
-    await page.locator('[data-action="organize"]').click();assert.match(await page.locator('#contexts').textContent(),/新文件/);
+    assert.equal(await page.locator('.quick-actions').count(),0);
+    await page.locator('#attach-context').click();await page.locator('.picker-option').first().locator('input').check();await page.locator('#picker-confirm').click();assert.ok(await page.locator('#contexts [data-remove]').count()>0);
     if(process.env.STUDY_UI_CAPTURE)await page.screenshot({path:path.join(root,'ui/previews/desktop.png')});
     await page.setViewportSize({width:390,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
     if(process.env.STUDY_UI_CAPTURE)await page.screenshot({path:path.join(root,'ui/previews/mobile.png')});

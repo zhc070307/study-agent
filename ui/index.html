@@ -7,6 +7,7 @@
   <title>Study Agent · 学习桌</title>
   <link rel="stylesheet" href="lib/pdfjs/pdf_viewer.css">
   <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="harness-sidebar.css">
   <script src="lib/marked.umd.js" defer></script>
   <script src="lib/purify.min.js" defer></script>
   <script src="app.js" defer></script>
@@ -27,12 +28,19 @@
   </defs></svg>
   <header class="app-header">
     <a class="brand" href="#" id="home" aria-label="Study Agent，返回桌面"><span>Study Agent</span></a>
-    <button id="semester-menu" class="text-button" title="查看或更换学期">学期</button><div class="preview-label"><span></span> 正在连接…</div>
+    <button id="semester-menu" class="text-button" title="查看或更换学期">学期</button>
     <button id="app-update" class="text-button" hidden>有新版本</button>
     <button id="settings" class="icon-button" aria-label="设置" title="设置"><svg viewBox="0 0 24 24"><path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z"/><path d="m9 3-1 3-3 1-2 4 2 2-1 3 3 3 3-1 2 3 4-1 1-3 3-1 1-4-2-2 1-3-3-3-3 1-2-3Z"/></svg></button>
     <button class="icon-button assistant-toggle" aria-label="收起助理" title="收起助理"><svg><use href="#i-panel"/></svg></button>
   </header>
   <main class="app-shell" id="shell">
+    <nav id="chat-sidebar" class="chat-sidebar" aria-label="本学期对话">
+      <div class="chat-sidebar-heading"><strong>对话</strong><button id="hide-chat-sidebar" class="icon-button" aria-label="收起对话侧栏"><svg><use href="#i-panel"/></svg></button></div>
+      <button id="new-chat" class="button subtle"><svg><use href="#i-plus"/></svg>新建对话</button>
+      <input id="history-search" class="picker-input" type="search" aria-label="搜索本学期聊天记录" placeholder="搜索对话…">
+      <select id="history-filter" aria-label="筛选对话"><option value="open">近期对话</option><option value="archived">已归档</option></select>
+      <div id="history-results" class="history-results"></div>
+    </nav>
     <section class="workspace" aria-label="学习桌面">
       <nav class="workspace-tabs" aria-label="桌面与打开的文件">
         <button id="back" class="desk-tab active">桌面</button>
@@ -59,13 +67,13 @@
         <div class="quote-bar" id="quote-bar" hidden><span id="quote-preview"></span><button class="button primary" id="ask-selection">问助理<svg><use href="#i-arrow"/></svg></button></div>
       </div>
     </section>
-    <div class="panel-divider" id="divider" role="separator" aria-label="调整助理宽度" aria-orientation="vertical" tabindex="0" aria-valuemin="300" aria-valuemax="560" aria-valuenow="370"></div>
+    <div class="panel-divider" id="divider" role="separator" aria-label="调整助理宽度" aria-orientation="vertical" tabindex="0" aria-valuemin="300" aria-valuemax="760" aria-valuenow="440"></div>
     <aside class="assistant" aria-label="学习助理">
-      <div class="assistant-header"><div class="assistant-identity"><strong>助理</strong><button id="conversation-menu" class="text-button" title="查看和搜索聊天记录">桌面对话</button></div><button id="find-chat" class="icon-button" aria-label="查找当前对话" title="查找当前对话（⌘/Ctrl F）"><svg><use href="#i-search"/></svg></button><button class="icon-button assistant-toggle" aria-label="收起助理" title="收起助理"><svg><use href="#i-panel"/></svg></button></div>
+      <div class="assistant-header"><button id="conversation-menu" class="icon-button" aria-label="展开对话侧栏" title="展开对话侧栏" aria-controls="chat-sidebar" aria-expanded="true"><svg><use href="#i-panel"/></svg></button><div class="assistant-identity"><span id="conversation-title">新对话</span></div><button id="expand-chat" class="icon-button" aria-label="展开对话" title="展开对话"><svg><use href="#i-split"/></svg></button><button id="find-chat" class="icon-button" aria-label="查找当前对话" title="查找当前对话（⌘/Ctrl F）"><svg><use href="#i-search"/></svg></button></div>
       <div id="chat-find" class="chat-find" hidden><input id="chat-find-input" type="search" aria-label="查找当前对话中的文字" placeholder="在这个对话中查找…"><span id="chat-find-count" role="status"></span><button id="chat-find-prev" class="text-button" aria-label="上一条匹配">↑</button><button id="chat-find-next" class="text-button" aria-label="下一条匹配">↓</button><button id="chat-find-close" class="text-button" aria-label="关闭对话查找">×</button></div>
       <p id="chat-unavailable" class="chat-unavailable" hidden>原文件已移除，仍可查看记录。请切换到桌面对话继续提问。</p>
-      <div class="conversation-wrap"><div class="conversation" id="conversation" role="log" aria-label="对话记录" aria-live="polite"></div><button id="chat-latest" class="chat-latest" hidden>回到最新 ↓</button></div>
-      <div class="assistant-bottom"><p id="model-setup" class="model-setup" hidden>使用助理前需要填写密钥。<button id="setup-assistant" class="text-button">设置助理</button></p><div class="quick-actions"><button data-action="organize">整理文件<svg><use href="#i-arrow"/></svg></button><button data-action="practice">组织练习<svg><use href="#i-arrow"/></svg></button></div><div class="composer"><div class="context-heading"><span>本次关联</span><button id="clear-context" class="text-button">清除</button></div><div id="contexts" class="contexts"></div><form id="chat-form"><textarea id="prompt" rows="3" aria-label="向助理提问" placeholder="说说你想做什么……"></textarea><div class="composer-footer"><button type="button" id="attach-context" class="icon-button" aria-label="关联桌面文件" title="关联桌面文件"><svg><use href="#i-plus"/></svg></button><button type="button" id="stop-agent" class="text-button" hidden>停止</button><button type="submit" class="send-button" aria-label="发送"><svg><use href="#i-send"/></svg></button></div></form></div><p class="prototype-note">正在连接服务…</p></div>
+      <div class="conversation-wrap"><div class="conversation" id="conversation" role="log" aria-label="对话记录" aria-live="polite"></div></div>
+      <div class="assistant-bottom"><p id="model-setup" class="model-setup" hidden>使用助理前需要填写密钥。<button id="setup-assistant" class="text-button">设置助理</button></p><div class="composer"><div class="context-heading"><span>本次关联</span><button id="clear-context" class="text-button">清除</button></div><div id="contexts" class="contexts"></div><form id="chat-form"><textarea id="prompt" rows="1" aria-label="向助理提问" placeholder="说说你想做什么……"></textarea><div class="composer-footer"><button type="button" id="attach-context" class="icon-button" aria-label="关联桌面文件" title="关联桌面文件"><svg><use href="#i-plus"/></svg></button><button type="button" id="stop-agent" class="text-button" hidden>停止</button><button type="submit" class="send-button" aria-label="发送"><svg><use href="#i-send"/></svg></button></div></form></div><p class="prototype-note">正在连接服务…</p></div>
     </aside>
   </main>
   <button id="restore-assistant" class="restore-assistant" hidden>打开助理</button>

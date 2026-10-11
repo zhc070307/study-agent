@@ -18,6 +18,13 @@ const pendingMessages=new Map(),conversationViews=new Map();
 let renderedChannel=null, draftChain=Promise.resolve();
 const chatFind={query:'',id:null};
 const savedAnswers=new Map(),answerTimers=new Map();
+let chats=[],chatRowEdit=null,chatRowDelete=null;
+let harnessRelativeTime=null,closeConversationMenus=()=>{};
+function conversationAge(time){
+  if(!harnessRelativeTime||!time)return '';
+  const {unit,n}=harnessRelativeTime(time,Date.now());
+  return unit==='now'?'刚刚':`${n}${({minutes:'分钟',hours:'小时',days:'天',months:'个月',years:'年'})[unit]}前`;
+}
 const requestId = () => crypto.randomUUID();
 async function api(path, value) {
   const headers=semesterId?{'X-Study-Semester':semesterId}:{};
@@ -47,12 +54,11 @@ async function refresh(force=false) {
   const semester=data.semesters.items.find(s=>s.id===semesterId);readonly=semester.status!=='open';
   $('#semester-menu').textContent=semester.name+(readonly?' · 已归档':'');
   removedFiles=data.trash||[];$('#file-trash').hidden=!removedFiles.length;
-  for(const element of $$('#new-folder,#new-task,#add-files,#remove-files,#move-files,#move-first,#rename,#edit-file,#compile-file,#transcribe-file,#prompt,.send-button,.quick-actions button'))element.disabled=readonly;
+  for(const element of $$('#new-folder,#new-task,#add-files,#remove-files,#move-files,#move-first,#rename,#edit-file,#compile-file,#transcribe-file,#prompt,.send-button'))element.disabled=readonly;
   for(const file of data.files){file.source+='?semester='+semesterId;file.url+='&semester='+semesterId;}
   applyConversation(data,data.semesters.active);
   if(data.warnings?.length)$('.prototype-note').textContent='课程文件有其他修改，已保留版本，待助理核对';
   $('#stop-agent').hidden=!busy;
-  $('.preview-label').textContent=busy ? '助理处理中' : '学习桌';
   if (!force && metadata()!==savedMetadata && serverVersion>=0) return;
   const readerStamp=list=>JSON.stringify(list.filter(file=>[state.active,state.compare,getFile(state.active)?.pdf?.file].includes(file.id)).map(file=>[file.id,file.sha256,file.name,file.folder,file.pdf,file.compile_result,file.accepted]));
   const contentChanged=readerStamp(files)!==readerStamp(data.files);
@@ -70,7 +76,7 @@ async function refresh(force=false) {
   if (firstLoad) {
     for(const [id,value] of Object.entries(data.drafts)) {
       if(id.startsWith('__answer:')){state.answers.set(id.slice(9),value.text||'');continue;}
-      if(id.startsWith('__reader:')){const file=getFile(id.slice(9));if(file)for(const key of ['pdfPage','pdfZoom','pdfScroll','mode'])if(value[key]!==undefined)file[key]=value[key];continue;}
+      if(id.startsWith('__reader:')){const file=getFile(id.slice(9));if(file)for(const key of ['pdfPage','pdfZoom','pdfScroll','pdfContinuous','mode'])if(value[key]!==undefined)file[key]=value[key];continue;}
       if(id.startsWith('__'))continue;
       state.compositions.set(id,{...value,contexts:new Set(value.contexts||[])});
       if(value.scroll!==undefined)state.scrolls.set(id,value.scroll);if(value.chatScroll)conversationViews.set(id,value.chatScroll);
@@ -87,23 +93,23 @@ async function refresh(force=false) {
   if(firstLoad&&data.drafts.__layout){
     const layout=data.drafts.__layout;state.tabs=(layout.tabs||[]).filter(id=>getFile(id));state.folder=folders.some(f=>f.id===layout.folder)||layout.folder==='unfiled'?layout.folder:null;state.deskScroll=layout.deskScroll||0;
     if(layout.active&&getFile(layout.active))openFile(layout.active);else renderDesktop();
-    if(layout.chatChannel&&(layout.chatChannel==='desktop'||state.messages.has(layout.chatChannel)||getFile(layout.chatChannel)))switchConversation(layout.chatChannel);
+    if(layout.chatChannel&&(chats.some(chat=>chat.channel===layout.chatChannel)||state.messages.has(layout.chatChannel)||layout.chatChannel===defaultChat(state.active)))switchConversation(layout.chatChannel);
   }
   applying=false;
 }
 let layoutChain=Promise.resolve();
 function persistLayout(){if(readonly)return;const value={active:state.active,tabs:[...state.tabs],folder:state.folder,deskScroll:state.deskScroll,chatChannel:state.chatChannel};layoutChain=layoutChain.then(()=>api('/api/workspace',{action:'draft',args:{channel:'__layout',value}})).catch(()=>{});}
-function saveDraft(key,value){if(readonly)return Promise.resolve(false);const write=draftChain.then(()=>operation('draft',{channel:key,value}));draftChain=write.catch(()=>{});return write.then(()=>true,error=>{toast(error.message);return false;});}
-function readerState(file){return {pdfPage:file.pdfPage,pdfZoom:file.pdfZoom,pdfScroll:file.pdfScroll,mode:file.mode};}
+function saveDraft(key,value){if(readonly||(!key.startsWith('__')&&chatLocked(key)))return Promise.resolve(false);const write=draftChain.then(()=>operation('draft',{channel:key,value}));draftChain=write.catch(()=>{});return write.then(()=>true,error=>{toast(error.message);return false;});}
+function readerState(file){return {pdfPage:file.pdfPage,pdfZoom:file.pdfZoom,pdfScroll:file.pdfScroll,pdfContinuous:file.pdfContinuous,mode:file.mode};}
 function persistReader(file){if(file)saveDraft('__reader:'+file.id,readerState(file));}
 function persistAnswer(file,text){clearTimeout(answerTimers.get(file));return saveDraft('__answer:'+file,{text});}
 function compositionValue(){return {prompt:$('#prompt').value,contexts:[...state.contexts],quote:state.quote,scroll:$('.workspace').scrollTop,chatScroll:conversationViews.get(channel()),failed:state.compositions.get(channel())?.failed};}
 function persistDraft() {
-  if(readonly)return;
+  if(readonly||chatLocked(channel()))return;
   const key=channel();
   const value=compositionValue();
   state.compositions.set(key,{...value,contexts:new Set(value.contexts)});
-  saveDraft(key,value);
+  return saveDraft(key,value);
 }
 const pdfDisposers = [];
 function disposePdfReaders() {for (const dispose of pdfDisposers.splice(0)) dispose();}
@@ -143,7 +149,10 @@ let draggedId = null, fileSearch = "";
 let toastTimer;
 let pickerCallback;
 const getFile = id => files.find(file => file.id === id);
-const channel = () => state.chatChannel || state.active || 'desktop';
+const defaultChat = file => chats.filter(chat=>chat.status==='open'&&chat.file===(file||null)).at(-1)?.channel || file || 'desktop';
+const channel = () => state.chatChannel || defaultChat(state.active);
+const chatFile = key => chats.find(chat=>chat.channel===key)?.file || (key==='desktop'?null:getFile(key)?.id||removedFiles.find(file=>file.id===key)?.id);
+const chatLocked = key => {const chat=chats.find(chat=>chat.channel===key),file=chatFile(key);return chat?.status==='archived'||Boolean(file&&!getFile(file));};
 const matchesFile = (file, query) => `${file.name} ${folderPath(file.folder)}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase());
 const visibleFiles = () => fileSearch.trim() ? files.filter(file=>matchesFile(file,fileSearch)) : files.filter(file => !state.folder||state.folder==='unfiled'?!file.folder:file.folder===state.folder);
 function toast(message) { $('#toast').textContent = message; $('#toast').hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => {$('#toast').hidden = true;}, 3600); }
@@ -198,14 +207,18 @@ function renderContexts() {
 function renderConversation() {
   const container = $('#conversation');
   const key=channel(),switched=renderedChannel!==key;
-  $('#conversation-menu').textContent=conversationName(key);
-  const unavailable=key!=='desktop'&&!getFile(key);$('#chat-unavailable').hidden=!unavailable;$('#prompt').disabled=readonly||unavailable;$('.send-button').disabled=readonly||unavailable||busy||sending;
+  $('#conversation-title').textContent=conversationName(key);
+  const archived=chats.find(chat=>chat.channel===key)?.status==='archived',unavailable=chatLocked(key);$('#chat-unavailable').hidden=!unavailable;$('#chat-unavailable').innerHTML=archived?'这段对话已归档。<button class="text-button" id="restore-chat" type="button">取消归档，继续对话</button>':'原文件已移除，对话记录仍可阅读。';$('#prompt').disabled=readonly||unavailable;$('.send-button').disabled=readonly||unavailable||busy||sending;
+  renderHistory();
   const view=conversationViews.get(key)||{top:0,follow:true};conversationViews.set(key,view);
+  const selection=getSelection();
+  if(!switched&&selection&&!selection.isCollapsed&&container.contains(selection.anchorNode))view.follow=false;
   const top=switched?view.top:container.scrollTop;
   const messages = [...(state.messages.get(key) || [])];
   for(const [id,pending] of pendingMessages)if(pending.channel===key&&!messages.some(message=>message.id===id))messages.push(pending);
   const live=runtimeView.live;
   if(live?.channel===key&&live.text)messages.push({id:'live-'+live.id,role:'assistant',text:live.text});
+  resizeComposer();
   const existing=new Map([...container.children].map(node=>[node.dataset.message,node]));
   const wanted=[];
   if (!messages.length) {
@@ -221,7 +234,7 @@ function renderConversation() {
     if(div.dataset.signature===signature)continue;
     div.dataset.message=id;div.dataset.signature=signature;div.replaceChildren();div.className = `message ${message.role === 'user' ? 'user' : 'assistant-message'}`;
     div._message=message;
-    const label = document.createElement('span'); label.className = 'message-meta'; label.textContent = message.role === 'user' ? '你' : '助理'; div.append(label);if(Number.isFinite(message.time)){const time=document.createElement('time');time.className='message-time';time.dateTime=new Date(message.time).toISOString();time.textContent=new Intl.DateTimeFormat(undefined,{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}).format(new Date(message.time));label.append(' · ',time);}
+    const label = document.createElement('span'); label.className = 'message-meta'; label.textContent = message.role === 'user' ? '你' : '助理'; div.append(label);if(Number.isFinite(message.time)){const time=document.createElement('time');time.className='message-time';time.dateTime=new Date(message.time).toISOString();time.textContent=new Intl.DateTimeFormat('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(message.time));label.append(' · ',time);}
     if (message.refs) { const refs = document.createElement('span'); refs.className = 'message-ref'; refs.textContent = message.refs; div.append(refs); }
     const body = document.createElement('div');body.className='chat-body';if(message.role==='assistant')body.innerHTML=markdownPreview(message.text);else body.textContent=message.text;div.append(body);
     for(const link of $$('a',body)){link.target='_blank';link.rel='noopener noreferrer';}
@@ -239,17 +252,24 @@ function renderConversation() {
   renderedChannel=key;
   container.scrollTop=view.follow?container.scrollHeight:top;
   view.top=container.scrollTop;
-  $('#chat-latest').hidden=view.follow||container.scrollHeight-container.clientHeight<24;
+
   updateChatFind();
 }
 function applyConversation(data,semester){
   if(semesterId&&semester!==semesterId)return;
   if(chatSemester===semester&&runtimeView.generation===data.runtime.generation&&data.runtime.revision<runtimeView.revision)return;
   chatSemester=semester;runtimeView=data.runtime;busy=runtimeView.status==='running';
+  if(serverVersion>=0&&!state.chatChannel)state.chatChannel=channel();
+  const previous=chats.find(chat=>chat.channel===state.chatChannel);
   state.messages=new Map(Object.entries(data.messages));
+  if(data.chats)chats=data.chats;
+  if(previous&&!chats.some(chat=>chat.channel===previous.channel)){
+    state.compositions.delete(previous.channel);conversationViews.delete(previous.channel);
+    state.chatChannel=defaultChat(previous.file);restoreComposition(previous.file&&getFile(previous.file)?[previous.file]:[]);
+    toast('这段对话已删除，已打开其他对话');
+  }
   $('#stop-agent').hidden=!busy;
   $('.send-button').disabled=readonly||busy||sending;
-  $('.preview-label').textContent=busy?'助理处理中':'学习桌';
   renderConversation();
 }
 let chatScrollTimer;
@@ -257,9 +277,8 @@ $('#conversation').addEventListener('scroll',()=>{
   if(renderedChannel!==channel())return;
   const container=$('#conversation'),view=conversationViews.get(channel());if(!view)return;
   view.top=container.scrollTop;view.follow=container.scrollHeight-container.clientHeight-container.scrollTop<24;
-  $('#chat-latest').hidden=view.follow;clearTimeout(chatScrollTimer);chatScrollTimer=setTimeout(persistDraft,400);
+  clearTimeout(chatScrollTimer);chatScrollTimer=setTimeout(persistDraft,400);
 },{passive:true});
-$('#chat-latest').addEventListener('click',()=>{conversationViews.set(channel(),{top:0,follow:true});renderConversation();});
 function connectChat(){
   chatStream?.close();
   chatStream=new EventSource('/api/chat-events');
@@ -284,7 +303,7 @@ function restoreComposition(defaultContexts) {
   state.contexts = saved ? new Set(saved.contexts) : new Set(defaultContexts);
   state.quote = saved?.quote || null;
   state.pendingQuote = null;
-  $('#prompt').value = saved?.prompt || '';
+  $('#prompt').value = saved?.prompt || '';resizeComposer();
   $('#prompt').placeholder=state.quote?'关于这段内容，你想问什么？':'说说你想做什么……';
 }
 const textReads=new Set();
@@ -309,6 +328,7 @@ async function loadText(file) {
 function openFile(id,{keepConversation=false}={}) {
   setTimeout(persistLayout,0);
   if (!getFile(id)) return;
+  setChatExpanded(false);
   delete getFile(id).loadError;
   const previousChannel=channel();saveScroll();const changed=state.active!==id;
   state.active=id;state.compare=null;state.chatChannel=keepConversation?previousChannel:null;
@@ -394,6 +414,7 @@ function renderTask() {
   }
 }
 function collapseAssistant(collapsed) {
+  if(collapsed)setChatExpanded(false);
   $('#shell').classList.toggle('collapsed', collapsed); $('#restore-assistant').hidden = !collapsed;
   for (const button of $$('.assistant-toggle')) {button.setAttribute('aria-label', collapsed ? '打开助理' : '收起助理'); button.title = collapsed ? '打开助理' : '收起助理';}
 }
@@ -432,15 +453,9 @@ function refsText() {
   if (state.quote) names.push(`${getFile(state.quote.file).name} · ${state.quote.source}：${state.quote.text.slice(0,80)}`);
   return names.join(' · ');
 }
-function quickAction(action) {
-  collapseAssistant(false);
-  if(action==='organize'&&!state.contexts.size){state.contexts=new Set(files.filter(file=>!file.folder).map(file=>file.id));renderContexts();}
-  if (!state.contexts.size && action !== 'question') {toast('先选择或关联文件');return;}
-  if(action==='organize')insertPrompt('请读取这些文件，并按内容整理到合适的文件夹。');if(action==='practice')insertPrompt('请根据这些材料组织练习，保存题目，并加入任务清单。');
-  $('#prompt').focus();
-}
+
 async function sendMessage() {
-  const input=$('#prompt'),text=input.value.trim();if(!text||sending||busy||readonly||(channel()!=='desktop'&&!getFile(channel())))return;
+  const input=$('#prompt'),text=input.value.trim();if(!text||sending||busy||chatManaging||readonly||chatLocked(channel()))return;
   if(modelSetupNeeded){try{await openSettings();}catch(error){toast(error.message);}return;}
   sending=true;
   const key=channel(),args={id:requestId(),channel:key,text,files:[...state.contexts].filter(id=>getFile(id)),quote:state.quote};
@@ -465,8 +480,9 @@ async function sendMessage() {
 }
 $('#chat-form').addEventListener('submit', event => {event.preventDefault(); sendMessage();});
 $('#prompt').addEventListener('keydown', event => {if(event.key==='Enter'&&!event.shiftKey&&!event.altKey&&!event.ctrlKey&&!event.metaKey&&!event.isComposing) {event.preventDefault(); sendMessage();}});
-$('#home').addEventListener('click', event => {event.preventDefault(); backToDesktop();});
-$('#back').addEventListener('click', backToDesktop);
+function returnToDesktop(){state.folder=null;fileSearch='';$('#file-search').value='';setChatExpanded(false);backToDesktop();}
+$('#home').addEventListener('click',event=>{event.preventDefault();returnToDesktop();});
+$('#back').addEventListener('click',returnToDesktop);
 $('#task-period').addEventListener('click',event=>{const button=event.target.closest('[data-period]');if(button){taskPeriod=button.dataset.period;renderTasks();}});
 $('#task-course').addEventListener('change',event=>{taskCourse=event.target.value;renderTasks();});
 $('#tasks').addEventListener('toggle',event=>{const key=event.target.dataset.taskGroup;if(!key)return;if(key==='completed'){if(event.target.open)collapsedTaskGroups.add('completed-open');else collapsedTaskGroups.delete('completed-open');}else if(event.target.open)collapsedTaskGroups.delete(key);else collapsedTaskGroups.add(key);},true);
@@ -506,7 +522,6 @@ $('#restore-assistant').addEventListener('click', () => {collapseAssistant(false
 $('#clear-context').addEventListener('click', () => {state.contexts.clear(); state.quote = null; renderContexts();});
 $('#contexts').addEventListener('click',event=>{if(event.target.closest('#recover-prompt')){const failed=state.compositions.get(channel())?.failed;showPicker('未发送的问题',`<p class="picker-note">确认后放回输入框，保留正在写的内容。不会自动发送。</p><blockquote class="failed-prompt">${esc(failed.text)}</blockquote>`,()=>{insertPrompt(failed.text);for(const id of failed.files||[])if(getFile(id))state.contexts.add(id);if(failed.quote&&!state.quote)state.quote=failed.quote;delete state.compositions.get(channel()).failed;renderContexts();persistDraft();});return;}const open=event.target.closest('[data-open-context]');if(open){openFile(open.dataset.openContext,{keepConversation:true});return;}const remove = event.target.closest('[data-remove]'); if (remove) state.contexts.delete(remove.dataset.remove); if (event.target.closest('[data-remove-quote]')) state.quote = null; renderContexts();});
 $('#attach-context').addEventListener('click', () => filePicker('关联桌面文件', ids => {state.contexts = new Set(ids); renderContexts();}, null, true));
-$$('[data-action]').forEach(button => button.addEventListener('click', () => quickAction(button.dataset.action)));
 $('#conversation').addEventListener('click', event => {const button = event.target.closest('[data-open-artifact]'); if(button)openFile(button.dataset.openArtifact,{keepConversation:true});});
 $('#document-tabs').addEventListener('click', event => {const close = event.target.closest('[data-close-tab]'); if (close) {closeTab(close.dataset.closeTab); return;} const tab = event.target.closest('[data-tab]'); if (tab) openFile(tab.dataset.tab);});
 $('#compare').addEventListener('click', () => filePicker('选择并排查看的文件', id => {saveScroll(); state.compare = id; renderTask();}, state.active));
@@ -563,46 +578,100 @@ $('.workspace').addEventListener('dragover', event => {if (event.dataTransfer.ty
 $('.workspace').addEventListener('drop', async event => {if (!event.dataTransfer.files.length) return; event.preventDefault(); await importFiles(event.dataTransfer.files);});
 window.addEventListener('beforeunload', () => {for (const file of files) if (file.url?.startsWith('blob:')) URL.revokeObjectURL(file.url);});
 const divider = $('#divider');
-function setAssistantWidth(width) {const max = Math.min(560, window.innerWidth - 420); const value = Math.max(300,Math.min(max,width)); document.documentElement.style.setProperty('--assistant-width', `${value}px`); divider.setAttribute('aria-valuenow', String(value));}
+function setAssistantWidth(width) {const sidebar=$('#shell').classList.contains('chats-hidden')?0:$('#chat-sidebar').getBoundingClientRect().width;const max = Math.min(760, window.innerWidth - sidebar - 340); const value = Math.max(300,Math.min(max,width)); document.documentElement.style.setProperty('--assistant-width', `${value}px`); divider.setAttribute('aria-valuenow', String(value));}
 divider.addEventListener('pointerdown', event => {divider.setPointerCapture(event.pointerId);});
-divider.addEventListener('pointermove', event => {if (divider.hasPointerCapture(event.pointerId)) setAssistantWidth(window.innerWidth - event.clientX);});
-divider.addEventListener('keydown', event => {if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {event.preventDefault(); setAssistantWidth($('.assistant').getBoundingClientRect().width + (event.key === 'ArrowLeft' ? 20 : -20));}});
-// History navigation uses the stored transcript; previews never change the model's conversation.
-function conversationName(key){return key==='desktop'?'桌面对话':getFile(key)?.name||removedFiles.find(file=>file.id===key)?.name||'旧文件对话';}
+divider.addEventListener('pointermove', event => {if (divider.hasPointerCapture(event.pointerId)) setAssistantWidth(event.clientX - $('.assistant').getBoundingClientRect().left);});
+divider.addEventListener('keydown', event => {if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {event.preventDefault(); setAssistantWidth($('.assistant').getBoundingClientRect().width + (event.key === 'ArrowRight' ? 20 : -20));}});
+// Conversation navigation is independent of the open file reader.
+function conversationName(key){
+  const chat=chats.find(chat=>chat.channel===key),first=(state.messages.get(key)||[]).find(message=>message.role==='user');
+  return chat?.title||first?.text.split('\n')[0].slice(0,80)||(chatFile(key)?getFile(chatFile(key))?.name||removedFiles.find(file=>file.id===chatFile(key))?.name||'文件对话':'新对话');
+}
 function switchConversation(key,messageId=null){
-  saveScroll();state.chatChannel=key;restoreComposition(getFile(key)?[key]:[]);
+  saveScroll();state.chatChannel=key;const file=chatFile(key);restoreComposition(file&&getFile(file)?[file]:[]);
   if(messageId)conversationViews.set(key,{top:0,follow:false});
-  chatFind.id=null;renderContexts();renderConversation();persistLayout();
+  closeChatFind();renderContexts();renderConversation();persistLayout();
   if(messageId)jumpToMessage(messageId);
 }
 function jumpToMessage(id){
   const container=$('#conversation'),node=[...container.children].find(node=>node.dataset.message===id);if(!node)return;
   container.scrollTop+=node.getBoundingClientRect().top-container.getBoundingClientRect().top-12;
-  conversationViews.set(channel(),{top:container.scrollTop,follow:false});$('#chat-latest').hidden=false;
+  conversationViews.set(channel(),{top:container.scrollTop,follow:false});persistDraft();
   node.classList.add('message-located');setTimeout(()=>node.classList.remove('message-located'),1600);persistDraft();
 }
-function historyRows(query=''){
-  const term=query.trim().toLocaleLowerCase();
-  const keys=[...new Set(['desktop',...state.messages.keys()])];
+let historyStamp='';
+function renderHistory(){
+  const term=$('#history-search').value.trim().toLocaleLowerCase(),filter=$('#history-filter').value;
+  const keys=[...new Set([...chats.map(chat=>chat.channel),...state.messages.keys(),channel()])];
   const entries=keys.map(key=>{
-    const messages=state.messages.get(key)||[],name=conversationName(key),path=folderPath(getFile(key)?.folder);
-    const named=`${name} ${path}`.toLocaleLowerCase().includes(term);
+    const chat=chats.find(chat=>chat.channel===key),messages=state.messages.get(key)||[],name=conversationName(key),file=getFile(chatFile(key)),path=file?folderPath(file.folder):'';
+    if((chat?.status||'open')!==filter)return null;
+    if(!messages.length&&!chat?.title&&key!==channel())return null;
+    const named=`${name} ${file?.name||''} ${path}`.toLocaleLowerCase().includes(term);
     const matches=messages.filter(message=>`${message.text} ${message.refs||''}`.toLocaleLowerCase().includes(term));
     if(term&&!named&&!matches.length)return null;
-    const target=(named?messages:matches).at(-1);
-    return {key,name,path,messages,target,time:messages.at(-1)?.time||0};
-  }).filter(Boolean).sort((a,b)=>b.time-a.time);
-  return entries.map(({key,name,path,messages,target})=>`<button type="button" class="history-row ${channel()===key?'current':''}" data-chat-channel="${esc(key)}" data-chat-message="${term&&target?esc(target.id||''):''}"><strong>${esc(name)}</strong><small>${esc(path)}${path?' · ':''}${messages.length} 条消息${channel()===key?' · 当前':''}</small><span>${esc((target?.text||'继续在桌面提问').slice(0,150))}</span></button>`).join('')||'<p class="picker-note">没有找到聊天记录，试试课程、文件名或消息中的文字。</p>';
+    return {key,name,path,file,messages,target:(named?messages:matches).at(-1),time:messages.at(-1)?.time||chat?.created||0,archived:chat?.status==='archived'};
+  }).filter(Boolean).sort((a,b)=>b.time-a.time||a.key.localeCompare(b.key));
+  const html=entries.map(({key,name,path,file,messages,target,archived,time})=>`<div class="history-row ${channel()===key?'current':''} ${archived?'archived':''}">
+    <button type="button" class="history-open" data-chat-channel="${esc(key)}" data-chat-message="${term&&target?esc(target.id||''):''}" ${channel()===key?'aria-current="true"':''}><strong title="${esc(name)}">${esc(name)}</strong><small title="${esc(file?.name||'桌面对话')}${path?' · '+esc(path):''}">${esc(file?.name||'桌面对话')}${archived?' · 已归档':''}${conversationAge(time)?' · '+conversationAge(time):''}</small>${term&&target?`<span>${esc(target.text.slice(0,110))}</span>`:''}</button>
+    <details class="chat-row-menu" data-row-menu="${esc(key)}"><summary aria-label="管理对话：${esc(name)}">···</summary><div><button type="button" data-chat-action="rename" data-channel="${esc(key)}" ${readonly?'disabled':''}>重命名</button><button type="button" data-chat-action="${archived?'restore':'archive'}" data-channel="${esc(key)}" ${readonly||busy?'disabled':''}>${archived?'取消归档':'归档'}</button><button type="button" class="chat-delete" data-chat-action="delete" data-channel="${esc(key)}" ${readonly||busy?'disabled':''}>删除</button></div></details>
+    ${chatRowEdit===key?`<form class="chat-row-edit" data-chat-rename="${esc(key)}"><input aria-label="对话名称" maxlength="180" value="${esc(name)}" required><button type="submit">保存</button><button type="button" data-chat-action="cancel">取消</button></form>`:''}
+    ${chatRowDelete===key?`<div class="chat-row-confirm"><p>删除这段对话和草稿？课程文件、任务和学习成果保留。</p><button type="button" class="chat-delete" data-chat-action="confirm-delete" data-channel="${esc(key)}">删除对话</button><button type="button" data-chat-action="cancel">取消</button></div>`:''}
+    </div>`).join('')||`<p class="picker-note">${term?'没有找到对应对话':filter==='archived'?'还没有归档对话':'点击新建对话，或直接向助理提问'}</p>`;
+  $('#new-chat').disabled=readonly;
+  if(html===historyStamp||((chatRowEdit||chatRowDelete)&&document.activeElement?.closest('.chat-row-edit')))return;
+  const opened=new Set($$('#history-results details[open]').map(node=>node.dataset.rowMenu));
+  closeConversationMenus();
+  historyStamp=html;$('#history-results').innerHTML=html;
+  for(const node of $$('#history-results details'))if(opened.has(node.dataset.rowMenu))node.open=true;
 }
+function resizeComposer(){const input=$('#prompt');input.style.height='24px';input.style.height=Math.min(160,Math.max(24,input.scrollHeight))+'px';}
+function setChatExpanded(expanded){$('#shell').classList.toggle('chat-expanded',expanded);$('#expand-chat').setAttribute('aria-label',expanded?'返回文件与对话':'展开对话');$('#expand-chat').title=expanded?'返回文件与对话':'展开对话';}
+$('#expand-chat').addEventListener('click',()=>{collapseAssistant(false);setChatExpanded(!$('#shell').classList.contains('chat-expanded'));});
+if(matchMedia('(max-width:720px)').matches)$('#shell').classList.add('chats-hidden');
 function openHistory(){
-  showPicker('聊天记录','<input id="history-search" class="picker-input" type="search" aria-label="搜索本学期聊天记录" placeholder="搜索本学期的聊天记录…" autofocus><div id="history-results" class="history-results">'+historyRows()+'</div>',null,{confirm:false});
+  $('#shell').classList.remove('chats-hidden');$('#conversation-menu').setAttribute('aria-expanded','true');
+  renderHistory();
 }
 $('#conversation-menu').addEventListener('click',openHistory);
-$('#picker-body').addEventListener('input',event=>{if(event.target.id==='history-search')$('#history-results').innerHTML=historyRows(event.target.value);});
-$('#picker-body').addEventListener('click',event=>{
+$('#hide-chat-sidebar').addEventListener('click',()=>{$('#shell').classList.add('chats-hidden');$('#conversation-menu').setAttribute('aria-expanded','false');});
+$('#history-search').addEventListener('input',renderHistory);
+$('#history-filter').addEventListener('change',()=>{chatRowEdit=chatRowDelete=null;renderHistory();});
+let chatManaging=false;
+async function manageChat(action,key,extra={}){
+  if(chatManaging)return;chatManaging=true;
+  const current=channel(),file=chatFile(key);state.chatChannel=current;
+  try{
+    if(await persistDraft()===false)throw new Error('未能保存草稿，请重试后再管理对话');
+    await draftChain;
+    const result=await api('/api/chats',{action,channel:key,...extra});
+    chatRowEdit=chatRowDelete=null;
+    if(action==='delete'){state.compositions.delete(key);conversationViews.delete(key);}
+    await refresh(true);
+    if(action==='create'){switchConversation(result.channel);$('#history-filter').value='open';}
+    else if((action==='archive'||action==='delete')&&current===key)switchConversation(defaultChat(file));
+    renderHistory();persistLayout();
+    toast({create:'已新建对话',archive:'已归档，可在已归档列表恢复',restore:'已取消归档',delete:'对话已删除',rename:'名称已保存'}[action]);
+    if(action==='create')$('#prompt').focus();
+  }catch(error){toast(error.message);}finally{chatManaging=false;}
+}
+$('#new-chat').addEventListener('click',()=>manageChat('create',null,{file:chatFile(channel())||null}));
+$('#chat-unavailable').addEventListener('click',event=>{if(event.target.closest('#restore-chat'))manageChat('restore',channel());});
+$('#history-results').addEventListener('click',event=>{
+  const action=event.target.closest('[data-chat-action]');
+  if(action){
+    const key=action.dataset.channel;action.closest('details')?.removeAttribute('open');
+    if(action.dataset.chatAction==='rename'){chatRowDelete=null;chatRowEdit=key;renderHistory();$('#history-results input')?.focus();$('#history-results input')?.select();}
+    else if(action.dataset.chatAction==='delete'){chatRowEdit=null;chatRowDelete=key;renderHistory();}
+    else if(action.dataset.chatAction==='cancel'){chatRowEdit=chatRowDelete=null;historyStamp='';renderHistory();}
+    else manageChat(action.dataset.chatAction==='confirm-delete'?'delete':action.dataset.chatAction,key);
+    return;
+  }
   const button=event.target.closest('[data-chat-channel]');if(!button)return;
-  const key=button.dataset.chatChannel,id=button.dataset.chatMessage;$('#picker').close('cancel');switchConversation(key,id||null);
+  chatRowEdit=chatRowDelete=null;switchConversation(button.dataset.chatChannel,button.dataset.chatMessage||null);
+  if(matchMedia('(max-width:720px)').matches)$('#shell').classList.add('chats-hidden');
 });
+$('#history-results').addEventListener('submit',event=>{event.preventDefault();const form=event.target.closest('[data-chat-rename]');if(form)manageChat('rename',form.dataset.chatRename,{title:$('input',form).value});});
 function updateChatFind(step=0,jump=false){
   const nodes=$$('#conversation .message'),term=chatFind.query.toLocaleLowerCase();
   const matches=term?nodes.filter(node=>node._message?.text.toLocaleLowerCase().includes(term)):[];
@@ -625,7 +694,7 @@ $('#chat-find-close').addEventListener('click',closeChatFind);
 function insertPrompt(text){
   collapseAssistant(false);const input=$('#prompt');
   // Deliberate insertions append to an existing question instead of replacing it.
-  input.value=input.value?input.value+'\n\n'+text:text;input.focus();input.setSelectionRange(input.value.length,input.value.length);persistDraft();
+  input.value=input.value?input.value+'\n\n'+text:text;input.focus();input.setSelectionRange(input.value.length,input.value.length);resizeComposer();persistDraft();
 }
 $('#conversation').addEventListener('click',async event=>{
   const message=event.target.closest('.message')?._message;if(!message)return;
@@ -650,12 +719,11 @@ document.addEventListener('keydown',event=>{
 });
 
 renderDesktop(); renderContexts(); renderConversation(); renderTabs();
-refresh(true).then(()=>{connectChat();$('.prototype-note').textContent='文件与对话自动保存';}).catch(error=>{toast('无法连接云端服务：'+error.message);$('.prototype-note').textContent='尚未连接服务';});
-setInterval(()=>refresh().catch(()=>{$('.preview-label').textContent='连接中断';}),2000);
+refresh(true).then(()=>{connectChat();$('.prototype-note').textContent='文件与对话自动保存';}).catch(error=>{toast('暂时无法连接，请重新打开软件。');$('.prototype-note').textContent='尚未连接服务';});
 if (matchMedia('(max-width:720px)').matches) collapseAssistant(true);
 
 let draftTimer;
-$('#prompt').addEventListener('input',()=>{clearTimeout(draftTimer);draftTimer=setTimeout(persistDraft,400);});
+$('#prompt').addEventListener('input',()=>{resizeComposer();clearTimeout(draftTimer);draftTimer=setTimeout(persistDraft,400);});
 $('#stop-agent').addEventListener('click',async()=>{try{await api('/api/stop',{});await refresh();}catch(error){toast(error.message);}});
 $('#new-task').addEventListener('click',()=>{showPicker('新建任务',`<input id="task-title" class="picker-input" placeholder="要做什么？" required><label class="settings-label">课程<select id="task-new-course" class="picker-input"><option value="">其他事项</option>${courses.map(course=>`<option value="${esc(course.id)}">${esc(course.name)}</option>`).join('')}</select></label><label class="settings-label">安排日期<input id="task-date" class="picker-input" type="date" value="${localDay()}"></label><p class="picker-note">日期留空表示暂不安排，可在“全部”中找到。</p>`,async()=>{try{await operation('task',{title:$('#task-title').value,course:$('#task-new-course').value||undefined,date:$('#task-date').value||null});await refresh();}catch(error){toast(error.message);}});$('#task-new-course').value=taskCourse;});
 $('#transcribe-file').addEventListener('click',async()=>{
@@ -696,7 +764,7 @@ window.addEventListener('pagehide',()=>{
   if(readonly)return;
   const key=channel(),value=compositionValue();
   const beacon=(channel,value)=>navigator.sendBeacon('/api/workspace',new Blob([JSON.stringify({action:'draft',args:{channel,value},semester:semesterId})],{type:'application/json'}));
-  beacon(key,value);for(const [id,text] of state.answers)if(text!==(savedAnswers.get(id)||''))beacon('__answer:'+id,{text});for(const pane of $$('.document-pane')){const file=getFile(pane.dataset.file);if(file)beacon('__reader:'+file.id,readerState(file));}
+  if(!chatLocked(key))beacon(key,value);for(const [id,text] of state.answers)if(text!==(savedAnswers.get(id)||''))beacon('__answer:'+id,{text});for(const pane of $$('.document-pane')){const file=getFile(pane.dataset.file);if(file)beacon('__reader:'+file.id,readerState(file));}
 });
 
 // One unobtrusive menu; ordinary learning does not require a configuration page.
@@ -775,3 +843,10 @@ $('#settings').addEventListener('click',()=>openSettings().catch(error=>toast(er
 $('#setup-assistant').addEventListener('click',()=>openSettings().catch(error=>toast(error.message)));
 async function checkSettings(){if(settingsChecked)return;settingsChecked=true;try{const value=await api('/api/settings');modelSetupNeeded=Boolean(value.needs_setup);$('#model-setup').hidden=!modelSetupNeeded;}catch(error){toast(error.message);}}
 checkSettings();
+
+setInterval(()=>refresh().catch(()=>{}),2000);
+import('./harness-ui.mjs').then(({relativeTime,installConversationMenus})=>{
+  harnessRelativeTime=relativeTime;
+  closeConversationMenus=installConversationMenus($('#history-results'));
+  historyStamp='';renderHistory();
+}).catch(()=>toast('对话菜单未能加载，请重新打开软件'));
