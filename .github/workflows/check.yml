@@ -9,6 +9,9 @@ on:
   pull_request:
 permissions:
   contents: read
+concurrency:
+  group: checks-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 jobs:
   check:
     runs-on: ubuntu-24.04
@@ -24,6 +27,10 @@ jobs:
       - name: PDF dependencies
         run: sudo apt-get update && sudo apt-get install -y ripgrep latexmk texlive-xetex texlive-lang-chinese texlive-latex-extra texlive-fonts-recommended texlive-science poppler-utils
       - run: ./study-agent setup
+      - name: Desktop update checks
+        run: |
+          npm ci --prefix packages/desktop --ignore-scripts
+          node --test verification/desktop/*.test.cjs
       - name: Browser dependencies
         run: pnpm exec playwright install --with-deps chromium
       - run: ./study-agent check
@@ -77,4 +84,6 @@ jobs:
         env:
           PYTHONUTF8: '1'
           PYTHONDONTWRITEBYTECODE: '1'
-        run: python -m unittest discover -s packages/agent/tests -p test_chat.py -v
+        run: |
+          python -m unittest discover -s packages/agent/tests -p test_chat.py -v
+          python -m unittest discover -s packages/agent/tests -p test_updates.py -v

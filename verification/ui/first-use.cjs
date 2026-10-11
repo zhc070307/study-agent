@@ -50,6 +50,37 @@ const assert=require('node:assert/strict');
     const after=await api('/api/state');assert.equal(after.semesters.active,'initial');assert.equal(after.files[0].sha256,before.files[0].sha256);
     assert.deepEqual(errors,[]);
     console.log('First use passed: no-key reading, inbox upload, existing transcript without downloads, private settings, unscheduled course task and independent backup restore. No model calls.');
+    // Desktop update events update only their own controls, preserving unsaved settings.
+    assert.equal(await page.locator('#app-update').evaluate(element=>element.hidden),true);
+    const desktopPage=await browser.newPage();
+    await desktopPage.addInitScript(()=>{
+      let listener;window.updateActions=[];
+      window.studyDesktop={updates:{
+        state:async()=>({status:'idle',current:'0.1.2',canInstall:true}),
+        subscribe:callback=>{listener=callback;return ()=>{};},
+        check:async()=>{window.updateActions.push('check');return {status:'current',current:'0.1.2',canInstall:true};},
+        download:async()=>{window.updateActions.push('download');return {status:'downloading',current:'0.1.2',canInstall:true,percent:0};},
+        install:async()=>{window.updateActions.push('install');return {status:'installing',current:'0.1.2',canInstall:true};}
+      }};
+      window.updateEvent=state=>listener({current:'0.1.2',version:'0.1.3',canInstall:true,...state});
+    });
+    await desktopPage.goto(origin);await desktopPage.waitForSelector('#folders');
+    await desktopPage.evaluate(()=>window.updateEvent({status:'available'}));
+    await desktopPage.locator('#app-update').click();
+    await desktopPage.locator('#model-key').fill('unsaved-private-key');
+    await desktopPage.getByRole('button',{name:'下载更新',exact:true}).click();
+    assert.deepEqual(await desktopPage.evaluate(()=>window.updateActions),['download']);
+    await desktopPage.evaluate(()=>window.updateEvent({status:'downloading',percent:42}));
+    assert.equal(await desktopPage.locator('#model-key').inputValue(),'unsaved-private-key');
+    assert.equal(await desktopPage.locator('[data-update-action]').isDisabled(),true);
+    await desktopPage.evaluate(()=>window.updateEvent({status:'ready'}));
+    await desktopPage.locator('#update-settings').getByRole('button',{name:'重启更新',exact:true}).click();
+    assert.deepEqual(await desktopPage.evaluate(()=>window.updateActions),['download','install']);
+    await desktopPage.evaluate(()=>window.updateEvent({status:'available',canInstall:false}));
+    assert.equal(await desktopPage.getByRole('button',{name:'查看新版',exact:true}).count(),1);
+    assert.deepEqual(await desktopPage.evaluate(()=>window.updateActions),['download','install']);
+    console.log('Desktop update UI passed: optional prompt, download/restart controls and unsaved settings preserved.');
+    await desktopPage.close();
     await api('/api/app-close',{token:ready.close_token});
   }finally{
     await browser?.close();if(child.exitCode===null)child.kill('SIGTERM');await exited;fs.rmSync(data,{recursive:true,force:true});

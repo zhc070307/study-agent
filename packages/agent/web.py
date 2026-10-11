@@ -33,10 +33,13 @@ def serialized(method):
         # A compile must not block status/stop. Selection changes instead refuse in-flight HTTP work.
         if urlsplit(self.path).path in ('/api/semesters','/api/semester-export','/api/semester-import'):
             with self.server.lifecycle_lock:
+                if getattr(self.server,'closing',False):return self.reply({'error':'软件正在退出'},409)
                 if self.server.pending_operations or any(job['status']=='running' for job in Transcription(self.server.root).records()):
                     return self.reply({'error':'文件操作尚未完成，请稍后再管理学期'},409)
                 return method(self)
-        with self.server.lifecycle_lock:self.server.pending_operations+=1
+        with self.server.lifecycle_lock:
+            if getattr(self.server,'closing',False):return self.reply({'error':'软件正在退出'},409)
+            self.server.pending_operations+=1
         try:return method(self)
         finally:
             with self.server.lifecycle_lock:self.server.pending_operations-=1
@@ -325,6 +328,11 @@ class Handler(BaseHTTPRequestHandler):
             self.trusted()
             path=unquote(urlsplit(self.path).path)
             if path=='/api/chat-events': return self.chat_events()
+            if path=='/api/update-ready':
+                with self.server.lifecycle_lock:
+                    ready=(self.server.pending_operations==1 and self.server.runtime.status!='running'
+                           and not any(job['status']=='running' for job in Transcription(self.server.root).records()))
+                    return self.reply({'ready':ready})
             if path=='/api/semester-export':
                 if self.server.runtime.status=='running':raise ValueError('请先停止助理，再下载学期备份')
                 identifier=parse_qs(urlsplit(self.path).query).get('semester',[None])[0]
@@ -420,6 +428,11 @@ class Handler(BaseHTTPRequestHandler):
                 import secrets
                 token=getattr(self.server,'close_token',None)
                 if not token or not secrets.compare_digest(str(args.get('token','')),token):raise ValueError('请求未授权')
+                with self.server.lifecycle_lock:
+                    if args.get('require_idle') and (self.server.pending_operations>1 or self.server.runtime.status=='running'
+                            or any(job['status']=='running' for job in Transcription(self.server.root).records())):
+                        return self.reply({'error':'当前操作尚未结束，请稍后更新'},409)
+                    self.server.closing=True
                 self.reply({'closing':True})
                 threading.Thread(target=self.server.shutdown,daemon=True).start()
                 return

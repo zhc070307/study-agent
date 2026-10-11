@@ -92,6 +92,9 @@ button svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.5
 .message-artifact svg{stroke:#647d9d;fill:none;width:18px;height:18px}
 .assistant-bottom{padding:16px;border-top:0;background:#fff}
 .model-setup{margin:0 0 12px;color:#6485ab;font-size:12px;line-height:1.7}
+.update-settings{padding:0 0 18px;margin-bottom:18px;border-bottom:1px solid #e2edfc;font-size:13px}
+.update-settings small{display:block;margin-top:5px;color:#6485ab}
+.update-settings p{margin:10px 0;color:#526c8b;line-height:1.7}
 .quick-actions{display:flex;gap:7px;margin-bottom:11px}
 .quick-actions button{padding:7px 10px;border:1px solid #e0ebfa;background:none;border-radius:7px;font-size:10px;display:flex;align-items:center;gap:10px}
 .quick-actions button:hover{background:#f2f7ff}

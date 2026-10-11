@@ -568,9 +568,29 @@ $('#file-trash').addEventListener('click',()=>showPicker('恢复文件',removedF
 
 let settingsChecked=false;
 let modelSetupNeeded=false;
+let updateState=null;
+function updateControls(){
+  if(!updateState||updateState.status==='disabled')return '';
+  const action=updateState.status==='available'?'download':updateState.status==='ready'?'install':'check';
+  const waiting=['checking','downloading','installing'].includes(updateState.status);
+  const label=action==='download'?(updateState.canInstall?'下载更新':'查看新版'):action==='install'?'重启更新':'检查更新';
+  return `<section id="update-settings" class="update-settings"><strong>软件更新</strong><small>当前版本 ${esc(updateState.current)}</small><p>${esc(updateState.message||'可以检查是否有新版本')}${updateState.status==='downloading'?' '+updateState.percent+'%':''}</p><button type="button" class="button subtle" data-update-action="${action}" ${waiting?'disabled':''}>${label}</button>${updateState.canInstall?'':'<p class="picker-note">这版需要从下载页面安装新版，学习资料会保留。</p>'}</section>`;
+}
+function showUpdateState(value){
+  updateState=value;
+  const button=$('#app-update');button.hidden=!['available','downloading','ready','installing'].includes(value.status);
+  button.textContent=value.status==='ready'?'重启更新':value.status==='downloading'?'更新 · '+value.percent+'%':'有新版本';
+  const panel=$('#update-settings');if(panel)panel.outerHTML=updateControls();
+}
+$('#app-update').addEventListener('click',()=>openSettings().catch(error=>toast(error.message)));
+$('#picker-body').addEventListener('click',async event=>{
+  const action=event.target.closest('[data-update-action]')?.dataset.updateAction;if(!action)return;
+  try{showUpdateState(await window.studyDesktop.updates[action]());}catch{toast('暂时无法完成更新，请稍后重试');}
+});
+if(window.studyDesktop?.updates){window.studyDesktop.updates.subscribe(showUpdateState);window.studyDesktop.updates.state().then(showUpdateState).catch(()=>{});}
 async function openSettings(){
   const settings=await api('/api/settings');
-  showPicker('设置',`<p class="picker-note">填写 DeepSeek 的服务密钥，让助理回答问题。阅读文件、手动整理无需先填写。</p><label class="settings-label">模型服务密钥<input id="model-key" class="picker-input" type="password" autocomplete="off" placeholder="${settings.configured?'已保存；留空保留现有密钥':'填写你的密钥'}"></label><a class="text-button" href="https://platform.deepseek.com/api_keys" target="_blank" rel="noopener">获取密钥</a><label class="settings-label">助理模型<select id="model-choice" class="picker-input"><option value="deepseek-flash">DeepSeek Flash</option><option value="deepseek-v4-pro">DeepSeek V4 Pro（文本）</option></select></label>`,async()=>{
+  showPicker('设置',`${updateControls()}<p class="picker-note">填写 DeepSeek 的服务密钥，让助理回答问题。阅读文件、手动整理无需先填写。</p><label class="settings-label">模型服务密钥<input id="model-key" class="picker-input" type="password" autocomplete="off" placeholder="${settings.configured?'已保存；留空保留现有密钥':'填写你的密钥'}"></label><a class="text-button" href="https://platform.deepseek.com/api_keys" target="_blank" rel="noopener">获取密钥</a><label class="settings-label">助理模型<select id="model-choice" class="picker-input"><option value="deepseek-flash">DeepSeek Flash</option><option value="deepseek-v4-pro">DeepSeek V4 Pro（文本）</option></select></label>`,async()=>{
     try{await api('/api/settings',{api_key:$('#model-key').value,model:$('#model-choice').value,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone});modelSetupNeeded=false;$('#model-setup').hidden=true;$('#model-key').value='';toast('设置已保存');}catch(error){toast(error.message);}
   });
   $('#model-choice').value=settings.model;

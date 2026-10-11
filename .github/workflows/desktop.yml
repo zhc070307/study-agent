@@ -13,7 +13,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-14, windows-latest]
+        include:
+          - os: macos-14
+            certificate: MAC_CERTIFICATE
+            password: MAC_CERTIFICATE_PASSWORD
+          - os: windows-latest
+            certificate: WINDOWS_CERTIFICATE
+            password: WINDOWS_CERTIFICATE_PASSWORD
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     steps:
@@ -72,7 +78,12 @@ jobs:
       - name: Build installer
         shell: bash
         env:
-          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ secrets.MAC_CERTIFICATE != '' && 'true' || 'false' }}
+          CSC_LINK: ${{ secrets[matrix.certificate] }}
+          CSC_KEY_PASSWORD: ${{ secrets[matrix.password] }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           npm ci --prefix packages/desktop
           npm run build --prefix packages/desktop -- --publish never
@@ -174,4 +185,9 @@ jobs:
           path: |
             dist/desktop/*.dmg
             dist/desktop/*.exe
+            dist/desktop/*.zip
+            dist/desktop/*.blockmap
+            dist/desktop/latest*.yml
+            dist/desktop/beta*.yml
+            dist/desktop/alpha*.yml
           if-no-files-found: error
