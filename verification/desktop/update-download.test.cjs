@@ -21,7 +21,7 @@ test('real updater downloads verified bytes, rejects corruption and refuses a do
     const updater=new NsisUpdater(null,app);
     class LocalExecutor extends ElectronHttpExecutor{createRequest(options,callback){assert.equal(options.hostname,'127.0.0.1');return http.request(options,callback);}}
     updater.httpExecutor=new LocalExecutor();updater.setFeedURL({provider:'generic',url:'http://127.0.0.1:'+server.address().port});updater.disableDifferentialDownload=true;
-    return new DesktopUpdates({updater,version});
+    return new DesktopUpdates({backgroundDownload:false,updater,version});
   }
   const good=create('0.1.2','good');let error;good.updater.on('error',e=>{error=e;});await good.check();assert.equal(good.snapshot().status,'available',String(error));assert.equal(downloads,0);
   await good.download();assert.equal(good.snapshot().status,'ready',String(error));

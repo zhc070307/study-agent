@@ -1,17 +1,17 @@
 const RELEASES='https://github.com/zhc070307/study-agent/releases';
 
 class DesktopUpdates {
-  constructor({updater,version,enabled=true,canInstall=true,prepareInstall=async()=>true,notify=()=>{},openRelease=()=>{}}){
+  constructor({updater,version,enabled=true,canInstall=true,installKind='restart',backgroundDownload=true,prepareInstall=async()=>true,notify=()=>{},openRelease=()=>{}}){
     this.updater=updater;this.prepareInstall=prepareInstall;this.notify=notify;this.openRelease=openRelease;
-    this.state={status:enabled?'idle':'disabled',current:version,version:null,percent:0,canInstall};
+    this.state={status:enabled?'idle':'disabled',current:version,version:null,percent:0,canInstall,installKind};
     updater.autoDownload=false;updater.autoInstallOnAppQuit=false;updater.allowDowngrade=false;
     updater.allowPrerelease=version.includes('-');updater.disableWebInstaller=true;
     updater.logger={info(){},warn(){},error(){},debug(){}};
     updater.on('checking-for-update',()=>this.set({status:'checking',message:'正在检查更新…'}));
     updater.on('update-not-available',()=>this.set({status:'current',message:'已是最新版本'}));
-    updater.on('update-available',info=>this.set({status:'available',version:info.version,percent:0,message:'发现新版本 '+info.version}));
+    updater.on('update-available',info=>{this.set({status:'available',version:info.version,percent:0,message:'发现新版本 '+info.version});if(backgroundDownload&&enabled&&canInstall)this.download();});
     updater.on('download-progress',info=>this.set({status:'downloading',percent:Math.max(0,Math.min(100,Math.round(info.percent))),message:'正在下载更新…'}));
-    updater.on('update-downloaded',info=>this.set({status:'ready',version:info.version,percent:100,message:'更新已下载，可重启安装'}));
+    updater.on('update-downloaded',info=>this.set({status:'ready',version:info.version,percent:100,message:installKind==='installer'?'更新已下载，点击安装更新':'更新已下载，可重启安装'}));
     updater.on('error',()=>this.failed());
   }
   set(value){Object.assign(this.state,value);this.notify(this.snapshot());}
@@ -37,8 +37,8 @@ class DesktopUpdates {
       const ready=await this.prepareInstall();
       if(ready===null)return this.snapshot();
       if(!ready){this.set({message:'助理或文件操作尚未结束，请完成后再重启更新。'});return this.snapshot();}
-      this.set({status:'installing',message:'正在重启更新…'});
-      this.updater.quitAndInstall(false,true);
+      this.set({status:'installing',message:this.state.installKind==='installer'?'正在打开安装包…':'正在重启更新…'});
+      await this.updater.quitAndInstall(false,true);
     }catch{this.set({status:'ready',message:'未能开始安装，请稍后重试；已下载的更新保留。'});}
     finally{this.installPending=false;}
     return this.snapshot();

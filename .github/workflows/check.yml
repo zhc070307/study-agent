@@ -35,6 +35,7 @@ jobs:
         run: pnpm exec playwright install --with-deps chromium
       - run: ./study-agent check
       - run: node verification/ui/check.cjs
+      - run: node --test verification/desktop/mac-update.test.cjs
       - run: node verification/ui/first-use.cjs
       - run: node verification/ui/state.cjs
       - run: node verification/ui/interactions.cjs

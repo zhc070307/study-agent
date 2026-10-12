@@ -346,7 +346,42 @@ a.text-button {color:inherit;text-decoration:none;align-self:center;}
 
 #conversation-menu{max-width:none;width:30px;display:inline-flex;padding:5px}
 
-.pdf-scroll-frame{position:relative;height:calc(100dvh - 232px);min-height:280px}
+/* Compact application/title bar and file tabs. Path and secondary actions live in the file menu. */
+:root{--app-bar-height:36px}
+.app-header{height:var(--app-bar-height);min-height:0;padding:0 12px;gap:8px;background:#f7fbff;-webkit-app-region:drag}
+.app-header button,.app-header a{-webkit-app-region:no-drag}
+.app-header .brand{font-size:12px}
+.app-header #semester-menu{font-size:11px;padding:3px 6px}
+.app-header .icon-button{width:26px;height:26px;border-radius:7px}
+html[data-platform="darwin"] .app-header{padding-left:82px}
+html[data-platform="win32"] .app-header{padding-right:148px}
+.app-shell{height:calc(100dvh - var(--app-bar-height))}
+.workspace{padding:0 12px 12px}
+.workspace-tabs{height:36px;min-height:36px;margin:0;padding:0;gap:4px;align-items:center;background:transparent;overflow:visible}
+.desk-tab{padding:5px 8px;font-size:11px;min-height:0}
+.document-tabs{height:32px;align-items:center}
+.file-tab{height:30px;padding-left:8px;max-width:230px;border-radius:7px}
+.file-tab>button{padding:4px 0}
+.file-tab .tab-close{padding:3px}
+#file-actions.file-actions-menu{display:block;position:relative;margin-left:auto;padding:0;flex:none}
+#file-actions[hidden]{display:none}
+.file-actions-menu>summary{list-style:none;cursor:pointer;padding:2px 8px;font-weight:700;border-radius:7px;color:#526d90}
+.file-actions-menu>summary::-webkit-details-marker{display:none}
+.file-actions-menu>summary:hover{background:#deecff}
+.file-actions-panel{position:absolute;right:0;top:28px;z-index:40;min-width:190px;max-width:min(320px,calc(100vw - 32px));padding:6px;display:flex;flex-direction:column;background:#fff;border:1px solid #dce8f8;border-radius:10px;box-shadow:0 8px 28px #315d8e25}
+.file-actions-panel>.text-button,.file-actions-panel>.icon-button{display:block;text-align:left;width:100%;padding:7px 9px;height:auto;border:0;background:none;box-sizing:border-box}
+.file-actions-panel>.icon-button svg{display:none}
+.file-actions-panel>#compare::after{content:'并排查看'}
+.file-actions-panel>#rename::after{content:'重命名'}
+.file-actions-panel button:hover,.file-actions-panel a:hover{background:#edf5ff;border-radius:6px}
+#document-meta{margin:6px 0 0;padding:7px 9px;border-top:1px solid #edf3fc;font-size:10px;line-height:1.5;color:#6683a5;overflow-wrap:anywhere}
+.file-reader{min-height:calc(100dvh - 84px);border-radius:10px}
+.pdf-toolbar{min-height:30px;height:30px;box-sizing:border-box;padding:3px 6px;gap:4px}
+.pdf-toolbar button{padding:2px 5px}
+.pdf-toolbar .pdf-page-input{height:23px;width:40px;box-sizing:border-box}
+@media(max-width:720px){.assistant{top:46px}.chat-sidebar{top:46px}.workspace-tabs{margin:0}.workspace{padding:0 10px 10px}}
+
+.pdf-scroll-frame{position:relative;height:calc(100dvh - 114px);min-height:280px}
 .pdf-scroll-frame .pdf-pages{position:absolute;inset:0;height:auto;min-height:0;padding:12px;overflow:auto;overscroll-behavior:contain}
 .pdfViewer .pdf-sheet{margin:0 auto 14px;border:0;border-radius:0;box-sizing:content-box}
 .app-header>.assistant-toggle{display:inline-flex}

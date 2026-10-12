@@ -87,6 +87,7 @@ jobs:
         run: |
           if [ "$RUNNER_OS" = macOS ]; then ulimit -n 8192; fi
           npm ci --prefix packages/desktop
+          node --test verification/desktop/update.test.cjs verification/desktop/update-download.test.cjs verification/desktop/mac-update.test.cjs
           npm run build --prefix packages/desktop -- --publish never
       - name: Open the packaged app
         shell: bash

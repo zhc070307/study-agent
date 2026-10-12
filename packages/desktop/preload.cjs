@@ -1,5 +1,10 @@
 const {contextBridge,ipcRenderer}=require('electron');
 contextBridge.exposeInMainWorld('studyDesktop',{
+  platform:process.platform,
+  files:{
+    open:(file,semester)=>ipcRenderer.invoke('study:file','open',{file,semester}),
+    reveal:(file,semester)=>ipcRenderer.invoke('study:file','reveal',{file,semester})
+  },
   updates:{
     state:()=>ipcRenderer.invoke('study:update','state'),
     check:()=>ipcRenderer.invoke('study:update','check'),

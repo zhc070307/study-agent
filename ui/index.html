@@ -45,7 +45,7 @@
       <nav class="workspace-tabs" aria-label="桌面与打开的文件">
         <button id="back" class="desk-tab active">桌面</button>
         <div class="document-tabs" id="document-tabs"></div>
-        <div id="file-actions" hidden><div id="reader-modes" role="group" aria-label="Markdown 显示方式" hidden><button data-mode="preview">预览</button><button data-mode="source">源码</button></div><button id="edit-file" class="text-button" hidden>编辑</button><a id="download-file" class="text-button" download>下载</a><button id="history-file" class="text-button" hidden>历史</button><button id="transcribe-file" class="text-button" hidden>转写</button><span id="transcribe-status" hidden></span><button id="compile-file" class="text-button" hidden>编译 PDF</button><button id="view-pdf" class="text-button" hidden>PDF</button><button id="compare" class="icon-button" aria-label="并排查看" title="并排查看"> <svg><use href="#i-split"/></svg></button><button id="rename" class="icon-button" aria-label="重命名当前文件" title="重命名"><svg><use href="#i-rename"/></svg></button></div>
+        <details id="file-actions" class="file-actions-menu" hidden><summary aria-label="文件操作" title="文件操作">···</summary><div class="file-actions-panel"><button id="open-native-file" class="text-button" hidden>用系统应用打开</button><button id="reveal-native-file" class="text-button" hidden>在文件夹中显示</button><div id="reader-modes" role="group" aria-label="Markdown 显示方式" hidden><button data-mode="preview">预览</button><button data-mode="source">源码</button></div><button id="edit-file" class="text-button" hidden>编辑</button><a id="download-file" class="text-button" download>导出副本</a><button id="history-file" class="text-button" hidden>历史</button><button id="transcribe-file" class="text-button" hidden>转写</button><span id="transcribe-status" hidden></span><button id="compile-file" class="text-button" hidden>编译 PDF</button><button id="view-pdf" class="text-button" hidden>PDF</button><button id="compare" class="icon-button" aria-label="并排查看" title="并排查看"> <svg><use href="#i-split"/></svg></button><button id="rename" class="icon-button" aria-label="重命名当前文件" title="重命名"><svg><use href="#i-rename"/></svg></button><p id="document-meta"></p></div></details>
       </nav>
       <div id="desktop">
         <section class="files-panel" aria-label="课程文件">
@@ -62,7 +62,7 @@
         <section id="task-list" class="task-list" aria-label="任务清单"><h2><span>任务清单 <small id="task-count"></small></span><button id="new-task" class="icon-button" aria-label="新建任务">＋</button></h2><div class="task-filters"><div id="task-period" class="segmented" role="group" aria-label="任务时间"><button data-period="today" class="active">今天</button><button data-period="next">接下来</button><button data-period="all">全部</button></div><select id="task-course" aria-label="按课程筛选任务"><option value="">全部课程</option></select></div><div id="tasks"></div></section>
       </div>
       <div id="task" hidden>
-        <div class="document-heading"><h1 id="document-title" class="sr-only"></h1><p id="document-meta"></p></div>
+        <h1 id="document-title" class="sr-only"></h1>
         <div class="document-area" id="document-area"></div>
         <div class="quote-bar" id="quote-bar" hidden><span id="quote-preview"></span><button class="button primary" id="ask-selection">问助理<svg><use href="#i-arrow"/></svg></button></div>
       </div>

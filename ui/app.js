@@ -1,4 +1,5 @@
 'use strict';
+if(window.studyDesktop?.platform)document.documentElement.dataset.platform=window.studyDesktop.platform;
 // Files, drafts and conversations share the current semester's local workspace.
 const $ = (selector, parent = document) => parent.querySelector(selector);
 const $$ = (selector, parent = document) => [...parent.querySelectorAll(selector)];
@@ -361,11 +362,14 @@ function paper(file) {
 }
 function renderTabs() {
   $('#document-tabs').innerHTML = state.tabs.map(id => `<div class="file-tab ${id === state.active ? 'active' : ''}"><button data-tab="${esc(id)}" aria-current="${id === state.active ? 'page' : 'false'}">${icon('file')}<span>${esc(getFile(id).name)}</span></button><button data-close-tab="${esc(id)}" class="tab-close" aria-label="关闭 ${esc(getFile(id).name)}" title="关闭">${icon('close')}</button></div>`).join('');
+  const tab=$('#document-tabs .active'),strip=$('#document-tabs');
+  if(tab){const box=tab.getBoundingClientRect(),frame=strip.getBoundingClientRect();if(box.right>frame.right)strip.scrollLeft+=box.right-frame.right;else if(box.left<frame.left)strip.scrollLeft+=box.left-frame.left;}
   $('#back').classList.toggle('active', !state.active);
   $('#back').setAttribute('aria-current', state.active ? 'false' : 'page');
   $('#file-actions').hidden = !state.active;
   const current=state.active && getFile(state.active);
   if(current){$('#download-file').href=current.url;$('#download-file').download=current.name;}
+  $('#open-native-file').hidden=$('#reveal-native-file').hidden=!current||!window.studyDesktop?.files;
   const markdown = current && formatFor(current) === 'markdown';
   const latex=current && formatFor(current)==='latex';
   const audio=current?.mime.startsWith('audio/');
@@ -390,6 +394,14 @@ function closeTab(id) {
     else backToDesktop();
   } else renderTabs();
 }
+for(const [id,action] of [['open-native-file','open'],['reveal-native-file','reveal']]){
+  $('#'+id).addEventListener('click',async()=>{
+    $('#file-actions').open=false;
+    try{await window.studyDesktop.files[action](state.active,semesterId);}catch(error){toast(error.message||'暂时无法打开本地文件');}
+  });
+}
+document.addEventListener('pointerdown',event=>{if(!event.target.closest('#file-actions'))$('#file-actions').open=false;});
+$('#file-actions').addEventListener('keydown',event=>{if(event.key==='Escape'){$('#file-actions').open=false;$('#file-actions summary').focus();}});
 function renderTask() {
   disposePdfReaders();
   const file = getFile(state.active);if(!file)return;
@@ -806,30 +818,32 @@ function updateControls(){
   if(!updateState||updateState.status==='disabled')return '';
   const action=updateState.status==='available'?'download':updateState.status==='ready'?'install':'check';
   const waiting=['checking','downloading','installing'].includes(updateState.status);
-  const label=action==='download'?(updateState.canInstall?'下载更新':'查看新版'):action==='install'?'重启更新':'检查更新';
+  const label=action==='download'?'下载更新':action==='install'?(updateState.installKind==='installer'?'安装更新':'重启更新'):'检查更新';
   return `<section id="update-settings" class="update-settings"><strong>软件更新</strong><small>当前版本 ${esc(updateState.current)}</small><p>${esc(updateState.message||'可以检查是否有新版本')}${updateState.status==='downloading'?' '+updateState.percent+'%':''}</p><button type="button" class="button subtle" data-update-action="${action}" ${waiting?'disabled':''}>${label}</button>${updateState.canInstall?'':'<p class="picker-note">这版需要从下载页面安装新版，学习资料会保留。</p>'}</section>`;
 }
 function showUpdateState(value){
   updateState=value;
   const button=$('#app-update');button.hidden=!['available','downloading','ready','installing'].includes(value.status);
-  button.textContent=value.status==='ready'?'重启更新':value.status==='downloading'?'更新 · '+value.percent+'%':'有新版本';
+  button.textContent=value.status==='ready'?(value.installKind==='installer'?'安装更新':'重启更新'):value.status==='downloading'?'更新 · '+value.percent+'%':'有新版本';
   const panel=$('#update-settings');if(panel)panel.outerHTML=updateControls();
 }
-$('#app-update').addEventListener('click',()=>openSettings().catch(error=>toast(error.message)));
-$('#picker-body').addEventListener('click',async event=>{
-  const action=event.target.closest('[data-update-action]')?.dataset.updateAction;if(!action)return;
+$('#app-update').addEventListener('click',()=>{if(updateState.status==='ready')runUpdate('install');else if(updateState.status==='available')runUpdate('download');else toast(updateState.message);});
+async function runUpdate(action){
   try{
     if(action==='install'){
+      if($('#edit-text')){toast('请先保存或取消当前文件编辑，再更新软件');return;}
       if($('#model-key')?.value){toast('请先保存设置，再重启更新');return;}
       const settings=await api('/api/settings');
-      if($('#model-key')?.value||$('#model-choice')?.value!==settings.model){toast('请先保存设置，再重启更新');return;}
+      if($('#model-key')?.value||($('#model-choice')&&$('#model-choice').value!==settings.model)){toast('请先保存设置，再更新软件');return;}
       const current=await api('/api/state');
       if([...state.answers].some(([id,text])=>text.trim()!==(current.answers[id]||'').trim())){toast('请先保存尚未保存的作答，再重启更新');return;}
-      if(!readonly)await operation('draft',{channel:channel(),value:{prompt:$('#prompt').value,contexts:[...state.contexts],quote:state.quote,scroll:$('.workspace').scrollTop}});
+      if(await persistDraft()===false){toast('请先保存草稿，再更新软件');return;}
+      await draftChain;
     }
     showUpdateState(await window.studyDesktop.updates[action]());
   }catch{toast('暂时无法完成更新，请稍后重试');}
-});
+}
+$('#picker-body').addEventListener('click',event=>{const action=event.target.closest('[data-update-action]')?.dataset.updateAction;if(action)runUpdate(action);});
 if(window.studyDesktop?.updates){window.studyDesktop.updates.subscribe(showUpdateState);window.studyDesktop.updates.state().then(showUpdateState).catch(()=>{});}
 async function openSettings(){
   if($('#edit-text')){toast('请先保存或取消当前编辑，再打开设置');return;}

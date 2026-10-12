@@ -521,6 +521,12 @@ class Handler(BaseHTTPRequestHandler):
                     self.server.runtime=Runtime(root,**self.server.runtime_options)
                 return self.reply(value)
             self.current_semester(args.get('semester'))
+            if path=='/api/local-file':
+                import secrets
+                token=getattr(self.server,'close_token',None)
+                if not token or not secrets.compare_digest(str(args.get('token','')),token):raise ValueError('请求未授权')
+                store=Workspace(self.server.root)
+                return self.reply({'path':store.local_file(args.get('file'))})
             if self.server.semesters.item()['status']!='open' and path!='/api/stop' and not (path=='/api/workspace' and args.get('action') in ('read','history')):
                 raise ValueError('这个学期已归档，文件可查看和下载；重新开始后可以修改或提问')
             if path=='/api/transcription':

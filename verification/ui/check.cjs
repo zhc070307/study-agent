@@ -46,9 +46,9 @@ const {chromium}=require(process.env.STUDY_UI_PLAYWRIGHT_MODULE || path.join(pac
     if(await page.locator('[data-folder="'+course.folder+'"]').count())await page.locator('[data-folder="'+course.folder+'"]').click();
     await page.locator('[data-folder="'+folder.id+'"]').click();
     await page.getByRole('button',{name:'打开 第一讲录音.wav',exact:true}).click();
-    await page.locator('#transcribe-file').click();
+    if(!await page.locator('#file-actions').evaluate(node=>node.open))await page.locator('#file-actions summary').click();await page.locator('#transcribe-file').click();
     await page.waitForFunction(()=>document.querySelector('#transcribe-file')?.textContent==='打开原稿');
-    await page.locator('#transcribe-file').click();
+    if(!await page.locator('#file-actions').evaluate(node=>node.open))await page.locator('#file-actions summary').click();await page.locator('#transcribe-file').click();
     await page.waitForSelector('.file-text');
     assert.match(await page.locator('.file-text').textContent(),/脚本化转写示例/);
     let speechState=await api('/api/state');
@@ -64,8 +64,8 @@ const {chromium}=require(process.env.STUDY_UI_PLAYWRIGHT_MODULE || path.join(pac
     await page.locator('.completed-tasks>summary').click();
     await page.locator('[data-task-open="'+source.id+'"]').click();
     await page.waitForSelector('.markdown-body h1');
-    await page.locator('[data-mode="source"]').click();assert.equal(await page.locator('.file-text').textContent(),source.text);
-    await page.locator('[data-mode="preview"]').click();
+    if(!await page.locator('#file-actions').evaluate(node=>node.open))await page.locator('#file-actions summary').click();await page.locator('[data-mode="source"]').click();assert.equal(await page.locator('.file-text').textContent(),source.text);
+    if(!await page.locator('#file-actions').evaluate(node=>node.open))await page.locator('#file-actions summary').click();await page.locator('[data-mode="preview"]').click();
     // Native physical selection, preserving the selected original text and actual file identity.
     await page.locator('.markdown-body h1').dblclick({position:{x:30,y:16}});
     await page.waitForSelector('#quote-bar:not([hidden])');
@@ -115,7 +115,7 @@ const {chromium}=require(process.env.STUDY_UI_PLAYWRIGHT_MODULE || path.join(pac
     assert.equal(await page.locator('#prompt').inputValue(),'下次想继续讨论');
     assert.match(await page.locator('#conversation').textContent(),/作答反馈已登记/);
     // PDF viewer: real second-page native selection and zoom.
-    await page.locator('#compare').click();await page.locator('#picker-body input[value="'+pdf.id+'"]').check();await page.locator('#picker-confirm').click();
+    if(!await page.locator('#file-actions').evaluate(node=>node.open))await page.locator('#file-actions summary').click();await page.locator('#compare').click();await page.locator('#picker-body input[value="'+pdf.id+'"]').check();await page.locator('#picker-confirm').click();
     await page.waitForSelector('.pdf-sheet[data-rendered]');
     await page.locator('[data-pdf="next"]').click();await page.waitForSelector('.pdf-sheet[data-page-number="2"][data-rendered]');
     const span=page.locator('.textLayer span').filter({hasText:/[\p{L}\p{N}]{2}/u}).first();await span.dblclick();await page.waitForSelector('#quote-bar:not([hidden])');if(process.env.STUDY_UI_CAPTURE)await page.screenshot({path:path.join(root,'ui/previews/pdf.png')});
@@ -126,14 +126,14 @@ const {chromium}=require(process.env.STUDY_UI_PLAYWRIGHT_MODULE || path.join(pac
     await page.locator('#back').click();while(await page.locator('#clear-folder').isVisible())await page.locator('#clear-folder').click();if(await page.locator('[data-folder="'+course.folder+'"]').count())await page.locator('[data-folder="'+course.folder+'"]').click();
     await page.locator('[data-folder="'+folder.id+'"]').click();
     await page.getByRole('button',{name:'打开 向量与坐标.tex',exact:true}).click();
-    await page.locator('#compile-file').click();await page.waitForSelector('.pdf-sheet[data-rendered]',{timeout:30000});
+    if(!await page.locator('#file-actions').evaluate(node=>node.open))await page.locator('#file-actions summary').click();await page.locator('#compile-file').click();await page.waitForSelector('.pdf-sheet[data-rendered]',{timeout:30000});
     state=await api('/api/state');const generated=state.files.find(file=>file.id===latex.id).pdf;assert.ok(generated);
     const oldPdf=state.files.find(file=>file.id===generated.file);
-    await page.locator('#edit-file').click();await page.locator('#edit-text').fill('\\badcommand');await page.locator('#picker-confirm').click();
+    if(!await page.locator('#file-actions').evaluate(node=>node.open))await page.locator('#file-actions summary').click();await page.locator('#edit-file').click();await page.locator('#edit-text').fill('\\badcommand');await page.locator('#picker-confirm').click();
     await page.waitForFunction(()=>document.querySelector('.compile-status')?.textContent.includes('编译失败'),{},{timeout:30000});
     state=await api('/api/state');assert.equal(state.files.find(file=>file.id===oldPdf.id).sha256,oldPdf.sha256);
     assert.equal(state.files.find(file=>file.id===latex.id).compile_result.ok,false);
-    await page.locator('#view-pdf').click();await page.locator('#history-file').click();await page.waitForSelector('#picker-body input[name=version]');const versions=page.locator('#picker-body input');assert.ok(await versions.count()>=2);await versions.last().check();await page.locator('#picker-confirm').click();
+    if(!await page.locator('#file-actions').evaluate(node=>node.open))await page.locator('#file-actions summary').click();await page.locator('#view-pdf').click();if(!await page.locator('#file-actions').evaluate(node=>node.open))await page.locator('#file-actions summary').click();await page.locator('#history-file').click();await page.waitForSelector('#picker-body input[name=version]');const versions=page.locator('#picker-body input');assert.ok(await versions.count()>=2);await versions.last().check();await page.locator('#picker-confirm').click();
     await page.waitForFunction(()=>document.querySelector('.compile-status')?.textContent.includes('源码已修改')||document.querySelector('.file-text')?.textContent.includes('documentclass'));
     // Stop a genuinely running SDK stream, then retain saved results.
     await page.locator('#prompt').fill('继续');await page.locator('.send-button').click();await page.waitForSelector('#stop-agent:not([hidden])');await page.locator('#stop-agent').click();
@@ -144,7 +144,7 @@ const {chromium}=require(process.env.STUDY_UI_PLAYWRIGHT_MODULE || path.join(pac
     await page.locator('[data-folder="'+folder.id+'"]').click();
     await page.locator('#file-input').setInputFiles({name:'new.md',mimeType:'',buffer:Buffer.from('# 新上传\n\n<script>window.pwned=true</script>\n![远程](https://example.com/x.png)')});
     await page.waitForSelector('button[aria-label="打开 new.md"]');assert.equal((await api('/api/state')).files.find(file=>file.name==='new.md').folder,null);await page.getByRole('button',{name:'打开 new.md',exact:true}).click();await page.waitForSelector('.markdown-body h1');assert.equal(await page.evaluate(()=>window.pwned),undefined);
-    await page.locator('#rename').click();await page.locator('#rename-input').fill('新文件.md');await page.locator('#picker-confirm').click();await page.waitForTimeout(600);
+    if(!await page.locator('#file-actions').evaluate(node=>node.open))await page.locator('#file-actions summary').click();await page.locator('#rename').click();await page.locator('#rename-input').fill('新文件.md');await page.locator('#picker-confirm').click();await page.waitForTimeout(600);
     await page.reload();await page.waitForFunction(()=>document.querySelector('#document-tabs').textContent.includes('新文件.md'));
     await page.setViewportSize({width:390,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
     assert.deepEqual(errors,[]);assert.deepEqual(external,[]);

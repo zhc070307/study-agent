@@ -14,7 +14,7 @@ class Updater extends EventEmitter{
 }
 test('check, download and restart are separate; busy operations and cancellation preserve the update',async()=>{
   const updater=new Updater();let ready=false;
-  const updates=new DesktopUpdates({updater,version:'0.1.2',prepareInstall:async()=>ready});
+  const updates=new DesktopUpdates({backgroundDownload:false,updater,version:'0.1.2',prepareInstall:async()=>ready});
   assert.equal(updater.autoDownload,false);assert.equal(updater.autoInstallOnAppQuit,false);assert.equal(updater.allowDowngrade,false);
   await updates.check();assert.equal(updates.snapshot().status,'available');assert.equal(updater.downloads,0);
   await updates.download();assert.equal(updates.snapshot().status,'ready');
@@ -24,16 +24,16 @@ test('check, download and restart are separate; busy operations and cancellation
   ready=true;await updates.install();assert.equal(updater.installs,1);assert.equal(updates.snapshot().status,'installing');
 });
 test('unpackaged runs stay offline and unsigned Mac uses the release page',async()=>{
-  const updater=new Updater(),disabled=new DesktopUpdates({updater,version:'0.1.2',enabled:false});
+  const updater=new Updater(),disabled=new DesktopUpdates({backgroundDownload:false,updater,version:'0.1.2',enabled:false});
   await disabled.check();assert.equal(updater.checks,0);
   let opened;
-  const updates=new DesktopUpdates({updater:new Updater(),version:'0.1.2',canInstall:false,openRelease:url=>{opened=url;}});
+  const updates=new DesktopUpdates({backgroundDownload:false,updater:new Updater(),version:'0.1.2',canInstall:false,openRelease:url=>{opened=url;}});
   await updates.check();await updates.download();assert.equal(updates.updater.downloads,0);
   assert.equal(opened,'https://github.com/zhc070307/study-agent/releases');
 });
 test('failed download is recoverable and raw errors stay out of the interface',async()=>{
   const updater=new Updater();updater.downloadUpdate=async()=>{throw new Error('private credentials');};
-  const updates=new DesktopUpdates({updater,version:'0.1.2'});
+  const updates=new DesktopUpdates({backgroundDownload:false,updater,version:'0.1.2'});
   await updates.check();await updates.download();assert.equal(updates.snapshot().status,'error');
   assert.ok(!JSON.stringify(updates.snapshot()).includes('private'));await updates.check();assert.equal(updates.snapshot().status,'available');
   updater.emit('download-progress',{percent:150});assert.equal(updates.snapshot().percent,100);
@@ -41,13 +41,13 @@ test('failed download is recoverable and raw errors stay out of the interface',a
 test('duplicate checks are suppressed while the first request is pending',async()=>{
   const updater=new Updater();let done;
   updater.checkForUpdates=()=>{updater.checks++;return new Promise(resolve=>{done=resolve;});};
-  const updates=new DesktopUpdates({updater,version:'0.1.2-beta.1'});
+  const updates=new DesktopUpdates({backgroundDownload:false,updater,version:'0.1.2-beta.1'});
   const checking=updates.check();await updates.check();assert.equal(updater.checks,1);assert.equal(updater.allowPrerelease,true);
   done(null);await checking;assert.equal(updates.snapshot().status,'current');
 });
 test('repeated restart clicks do not open multiple dialogs or install twice',async()=>{
   const updater=new Updater();let done,calls=0;
-  const updates=new DesktopUpdates({updater,version:'0.1.2',prepareInstall:()=>{calls++;return new Promise(resolve=>{done=resolve;});}});
+  const updates=new DesktopUpdates({backgroundDownload:false,updater,version:'0.1.2',prepareInstall:()=>{calls++;return new Promise(resolve=>{done=resolve;});}});
   await updates.check();await updates.download();const installing=updates.install();await updates.install();assert.equal(calls,1);
   done(true);await installing;assert.equal(updater.installs,1);
 });

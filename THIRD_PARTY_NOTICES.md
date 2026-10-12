@@ -36,6 +36,7 @@ Windows 包中的 TeX 可执行文件由本项目构建脚本调整应用清单�
 | `detect-libc@2.1.2` | Apache-2.0 |
 | `expect-type@1.4.0` | Apache-2.0 |
 | `human-signals@8.0.1` | Apache-2.0 |
+| `js-yaml@4.3.2` | MIT |
 | `playwright@1.58.2` | Apache-2.0 |
 | `playwright-core@1.58.2` | Apache-2.0 |
 | `sharp@0.35.3` | Apache-2.0 |

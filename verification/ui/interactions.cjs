@@ -41,7 +41,7 @@ finally:server.runtime.stop();server.server_close()
     assert.match(await page.locator(`[data-id="${note.id}"] small`).textContent(),/微积分/);
     assert.match(await page.locator(`[data-id="${other.id}"] small`).textContent(),/物理/);
     await page.locator(`[data-id="${note.id}"] .file-open`).click();await page.waitForSelector('.markdown-body');
-    await page.locator(`#document-meta [data-browse-folder="${math.folder}"]`).click();
+    await page.locator('#file-actions summary').click();await page.locator(`#document-meta [data-browse-folder="${math.folder}"]`).click();
     await page.waitForSelector(`[data-folder="${math.folders.materials}"]`);
     assert.equal(await page.locator('#file-search').inputValue(),'');
     await page.locator('#files-heading [data-browse-folder=""]').click();
@@ -61,7 +61,7 @@ finally:server.runtime.stop();server.server_close()
     await page.locator(`[data-open-context="${other.id}"]`).click();await page.waitForFunction(()=>document.querySelector('.markdown-body h1')?.textContent==='运动学');
     assert.equal(await page.locator('#prompt').inputValue(),'我的问题还没写完');
     assert.equal(await page.evaluate(()=>channel()),note.id);
-    await page.locator('#edit-file').click();await page.locator('#edit-text').fill('# 用户修改，失败也要保留');
+    if(!await page.locator('#file-actions').evaluate(node=>node.open))await page.locator('#file-actions summary').click();await page.locator('#edit-file').click();await page.locator('#edit-text').fill('# 用户修改，失败也要保留');
     await page.route('**/api/workspace',route=>{const value=route.request().postDataJSON();return value.action==='write'?route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({error:'暂时无法保存，请稍后重试'})}):route.continue();});
     await page.locator('#picker-confirm').click();await page.waitForSelector('.picker-error');
     assert.equal(await page.locator('#edit-text').inputValue(),'# 用户修改，失败也要保留');

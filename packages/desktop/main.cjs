@@ -9,7 +9,7 @@ app.on('second-instance',()=>{if(window){if(window.isMinimized())window.restore(
 function pythonPath(root){return process.platform==='win32'?path.join(root,'python.exe'):path.join(root,'bin','python3');}
 async function launch(){
   if(process.env.STUDY_DESKTOP_SMOKE){app.setPath('userData',fs.mkdtempSync(path.join(app.getPath('temp'),'study-desktop-smoke-')));}
-  window=new BrowserWindow({show:!process.env.STUDY_DESKTOP_SMOKE,width:1400,height:940,minWidth:900,minHeight:640,title:'Study Agent',backgroundColor:'#eef5ff',autoHideMenuBar:true,webPreferences:{nodeIntegration:false,contextIsolation:true,sandbox:true,preload:path.join(__dirname,'preload.cjs')}});
+  window=new BrowserWindow({show:!process.env.STUDY_DESKTOP_SMOKE,width:1400,height:940,minWidth:900,minHeight:640,title:'Study Agent',titleBarStyle:process.platform==='darwin'?'hiddenInset':'hidden',trafficLightPosition:{x:12,y:10},titleBarOverlay:process.platform==='darwin'?false:{color:'#f7fbff',symbolColor:'#365578',height:36},backgroundColor:'#eef5ff',autoHideMenuBar:true,webPreferences:{nodeIntegration:false,contextIsolation:true,sandbox:true,preload:path.join(__dirname,'preload.cjs')}});
   await window.loadFile(path.join(__dirname,'boot.html'));
   const resources=process.resourcesPath;
   const runtime=process.env.STUDY_DESKTOP_RUNTIME||path.join(resources,'runtime');
@@ -29,7 +29,15 @@ async function launch(){
     while((newline=output.indexOf('\n'))>=0){
       const line=output.slice(0,newline);output=output.slice(newline+1);
       let event;try{event=JSON.parse(line);}catch{continue;}
-      if(event.ready&&!ready){ready=true;closeToken=event.close_token;clearTimeout(timeout);origin=`http://127.0.0.1:${event.port}`;setupUpdates();window.loadURL(origin).then(async()=>{if(process.env.STUDY_DESKTOP_SMOKE){const okay=await window.webContents.executeJavaScript("Boolean(document.querySelector('#settings') && document.querySelector('#folders') && window.studyDesktop?.updates)");if(!okay)return failed('安装包界面检查失败');console.log('Packaged desktop opened its own backend, update bridge and learning UI.');app.quit();}}).catch(()=>failed('学习桌面未能打开，请重新打开软件。'));}
+      if(event.ready&&!ready){ready=true;closeToken=event.close_token;clearTimeout(timeout);origin=`http://127.0.0.1:${event.port}`;setupUpdates();window.loadURL(origin).then(async()=>{if(process.env.STUDY_DESKTOP_SMOKE){const okay=await window.webContents.executeJavaScript(`(async()=>{
+        if(!document.querySelector('#settings')||!document.querySelector('#folders')||!window.studyDesktop?.updates||!window.studyDesktop?.files)return false;
+        const op=async(action,args)=>{const response=await fetch('/api/workspace',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,args,id:crypto.randomUUID()})});if(!response.ok)throw new Error('Native file setup failed');return response.json();};
+        const course=await op('course',{code:'SMOKE',name:'安装检查'});
+        const file=await op('create',{name:'本地文件.md',text:'# 本地文件',folder:course.folders.notes});
+        const state=await(await fetch('/api/state')).json();
+        await window.studyDesktop.files.reveal(file.id,state.semesters.active);
+        return true;
+      })()`);if(!okay)return failed('安装包界面检查失败');console.log('Packaged desktop opened its backend, update bridge, native file reveal and learning UI.');app.quit();}}).catch(()=>failed('学习桌面未能打开，请重新打开软件。'));}
     }
   });
   // Diagnostic output stays private and bounded; never include model credentials in dialogs.
@@ -41,19 +49,32 @@ async function launch(){
   window.webContents.on('will-navigate',(event,url)=>{if(url!==origin&&!url.startsWith(origin+'/')){event.preventDefault();if(/^https:\/\//.test(url))shell.openExternal(url);}});
 }
 function setupUpdates(){
-  const {autoUpdater}=require('electron-updater');
+  ipcMain.handle('study:file',async(event,action,args)=>{
+    if(event.sender!==window?.webContents||event.senderFrame!==event.sender.mainFrame||new URL(event.senderFrame.url).origin!==origin)throw new Error('此操作不可用');
+    if(!['open','reveal'].includes(action)||typeof args?.file!=='string')throw new Error('此操作不可用');
+    const response=await fetch(origin+'/api/local-file',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...args,token:closeToken})});
+    const result=await response.json();if(!response.ok)throw new Error(result.error||'无法找到本地文件');
+    const target=fs.realpathSync(result.path),learning=fs.realpathSync(path.join(app.getPath('userData'),'learning'));
+    const relative=path.relative(learning,target);
+    if(relative.startsWith('..')||path.isAbsolute(relative)||!fs.statSync(target).isFile())throw new Error('文件位置无效');
+    if(action==='reveal'){shell.showItemInFolder(target);return;}
+    if(/\.(exe|com|bat|cmd|ps1|sh|command|app|lnk|url)$/i.test(target))throw new Error('此类型请在文件夹中查看，不能作为文档打开');
+    const error=await shell.openPath(target);if(error)throw new Error('系统未能打开这份文件，请在文件夹中选择打开方式');
+  });
+  const manualMac=process.platform==='darwin'&&!require('./package.json').studyMacUpdates;
+  const autoUpdater=manualMac?new (require('./mac-download-updater.cjs').MacDownloadUpdater)({version:app.getVersion(),cache:path.join(app.getPath('userData'),'updates'),fetch:(...args)=>require('electron').net.fetch(...args),openInstaller:file=>shell.openPath(file),quit:async()=>{await shutdownBackend(true);app.quit();}}):require('electron-updater').autoUpdater;
   const {DesktopUpdates}=require('./updater.cjs');
   updates=new DesktopUpdates({updater:autoUpdater,version:app.getVersion(),enabled:app.isPackaged&&!process.env.STUDY_DESKTOP_SMOKE,
-    canInstall:process.platform!=='darwin'||Boolean(require('./package.json').studyMacUpdates),
+    canInstall:true,installKind:manualMac?'installer':'restart',
     notify:state=>{if(window&&!window.isDestroyed())window.webContents.send('study:update-state',state);},
     openRelease:url=>shell.openExternal(url),
     prepareInstall:async()=>{
       const response=await fetch(origin+'/api/update-ready');if(!response.ok||!(await response.json()).ready)return false;
-      const result=await dialog.showMessageBox(window,{type:'question',title:'更新 Study Agent',message:'重启并安装新版本？',detail:'课程资料、学习记录和设置会保留。',buttons:['重启更新','稍后'],defaultId:0,cancelId:1});
+      const result=await dialog.showMessageBox(window,{type:'question',title:'更新 Study Agent',message:manualMac?'打开已下载的新版本安装包？':'重启并安装新版本？',detail:manualMac?'软件将退出。把安装盘中的 Study Agent 拖入“应用程序”并替换，然后重新打开。课程资料、学习记录和设置会保留。':'课程资料、学习记录和设置会保留。',buttons:[manualMac?'安装更新':'重启更新','稍后'],defaultId:0,cancelId:1});
       if(result.response!==0)return null;
       // Recheck after the dialog; a new model call may have started in the meantime.
       const checked=await fetch(origin+'/api/update-ready');if(!checked.ok||!(await checked.json()).ready)return false;
-      await shutdownBackend(true);return true;
+      if(!manualMac)await shutdownBackend(true);return true;
     }});
   ipcMain.handle('study:update',async(event,action)=>{
     if(event.sender!==window?.webContents||event.senderFrame!==event.sender.mainFrame||new URL(event.senderFrame.url).origin!==origin)throw new Error('此操作不可用');

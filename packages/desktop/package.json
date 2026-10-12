@@ -1,8 +1,8 @@
 {
   "name": "study-agent-desktop",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "private": true,
-  "description": "\u8bfe\u7a0b\u6587\u4ef6\u4e0e\u5b66\u4e60\u52a9\u7406",
+  "description": "课程文件与学习助理",
   "author": "Study Agent contributors",
   "license": "MIT",
   "main": "main.cjs",
@@ -27,7 +27,8 @@
       "boot.html",
       "package.json",
       "preload.cjs",
-      "updater.cjs"
+      "updater.cjs",
+      "mac-download-updater.cjs"
     ],
     "extraResources": [
       {
@@ -95,6 +96,8 @@
     }
   },
   "dependencies": {
-    "electron-updater": "6.8.9"
+    "electron-updater": "6.8.9",
+    "js-yaml": "4.3.2",
+    "semver": "7.8.5"
   }
 }

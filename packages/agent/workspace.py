@@ -566,6 +566,24 @@ class Workspace:
         if re.fullmatch(r'(?i)(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\..*)?',value):value='_'+value
         return value
 
+    def local_file(self, identifier):
+        """Locate the managed course file; unfiled materials get a named preview copy."""
+        file=self.file(identifier)
+        if file.get('course_path'):
+            target=(self.root/file['course_path']).resolve()
+            if not target.is_relative_to(self.root) or not target.is_file():
+                raise ValueError('本地文件已移动或移除，请先核对位置；仍可导出保存的副本')
+        else:
+            target=self.root/'.workspace/open-files'/file['id']/self.storage_name(file['name'])
+            if not target.resolve().is_relative_to(self.root):raise ValueError('文件位置无效')
+            target.parent.mkdir(parents=True,exist_ok=True)
+            data=self.content(file)
+            if not target.exists() or target.read_bytes()!=data:
+                with tempfile.NamedTemporaryFile(dir=target.parent,delete=False) as handle:
+                    handle.write(data);temporary=Path(handle.name)
+                temporary.replace(target)
+        return str(target)
+
     def folder_storage_path(self,identifier):
         parts=[]
         while identifier:
