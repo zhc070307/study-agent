@@ -54,9 +54,7 @@ function setupUpdates(){
     if(!['open','reveal'].includes(action)||typeof args?.file!=='string')throw new Error('此操作不可用');
     const response=await fetch(origin+'/api/local-file',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...args,token:closeToken})});
     const result=await response.json();if(!response.ok)throw new Error(result.error||'无法找到本地文件');
-    const target=fs.realpathSync(result.path),learning=fs.realpathSync(path.join(app.getPath('userData'),'learning'));
-    const relative=path.relative(learning,target);
-    if(relative.startsWith('..')||path.isAbsolute(relative)||!fs.statSync(target).isFile())throw new Error('文件位置无效');
+    const target=require('./local-files.cjs').localFile(result.path,path.join(app.getPath('userData'),'learning'));
     if(action==='reveal'){shell.showItemInFolder(target);return;}
     if(/\.(exe|com|bat|cmd|ps1|sh|command|app|lnk|url)$/i.test(target))throw new Error('此类型请在文件夹中查看，不能作为文档打开');
     const error=await shell.openPath(target);if(error)throw new Error('系统未能打开这份文件，请在文件夹中选择打开方式');

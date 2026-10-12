@@ -370,6 +370,7 @@ html[data-platform="win32"] .app-header{padding-right:148px}
 .file-actions-menu>summary:hover{background:#deecff}
 .file-actions-panel{position:absolute;right:0;top:28px;z-index:40;min-width:190px;max-width:min(320px,calc(100vw - 32px));padding:6px;display:flex;flex-direction:column;background:#fff;border:1px solid #dce8f8;border-radius:10px;box-shadow:0 8px 28px #315d8e25}
 .file-actions-panel>.text-button,.file-actions-panel>.icon-button{display:block;text-align:left;width:100%;padding:7px 9px;height:auto;border:0;background:none;box-sizing:border-box}
+.file-actions-panel>.icon-button{font-size:12px;color:#526d90}
 .file-actions-panel>.icon-button svg{display:none}
 .file-actions-panel>#compare::after{content:'并排查看'}
 .file-actions-panel>#rename::after{content:'重命名'}
